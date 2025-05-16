@@ -11,7 +11,7 @@ from argparse import ArgumentParser
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-sns.set(style="darkgrid")
+#sns.set(style="darkgrid")
 
 class MinMaxDataset(Dataset):
     def __init__(self, x, y):

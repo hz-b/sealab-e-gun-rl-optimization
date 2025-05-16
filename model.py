@@ -113,7 +113,7 @@ if __name__ == "__main__":
     critic_net = Critic()
     lr_monitor = LearningRateMonitor(logging_interval='step')
     
-    trainer = L.Trainer(max_epochs=1000, log_every_n_steps=100, accelerator=str(critic_net.model.device.type), logger=wandb_logger, callbacks=[lr_monitor])
+    trainer = L.Trainer(max_epochs=25000, log_every_n_steps=100, accelerator=str(critic_net.model.device.type), logger=wandb_logger, callbacks=[lr_monitor])
     
     model = RandomModel(critic_net=critic_net)
     dm = RandomDataModule(num_samples, model.input_dim, model.output_dim, batch_size, seed, device=critic_net.model.device)
