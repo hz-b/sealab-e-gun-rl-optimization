@@ -279,7 +279,7 @@ def jac_std_avg(model, stddev=.2):
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
-def evaluation(niter=1000):
+def evaluation(repetitions=1000, niter=100):
     outputs_list = []
     network_outputs_list = []
     device=torch.device('cuda')
@@ -288,7 +288,7 @@ def evaluation(niter=1000):
     model = RandomModel.load_from_checkpoint("outputs/berlinpro/pt5s96kz/checkpoints/epoch=24999-step=200000.ckpt", critic_net=critic_net,  map_location=device).to(device)
     model.eval()  # Set to eval mode
     
-    for i in trange(niter):
+    for i in trange(repetitions):
         torch.manual_seed(i)
         state = torch.rand((1,8), device=device)
         outputs = {
@@ -318,7 +318,7 @@ def evaluation(niter=1000):
     return outputs, network_outputs, model
 
 if __name__ == "__main__":
-    outputs, network_outputs, model = evaluation()
+    outputs, network_outputs, model = evaluation(niter=100)
     
     plot_time_comparison(outputs, network_outputs.mean().item())
 
