@@ -19,6 +19,7 @@ from evotorch.operators import (
 from evotorch.logging import StdOutLogger
 import logging
 import optuna
+import pickle
 
 from critic import Critic
 
@@ -278,7 +279,7 @@ def jac_std_avg(model, stddev=.2):
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
-def evaluation(niter=100):
+def evaluation(niter=1000):
     outputs_list = []
     network_outputs_list = []
     device=torch.device('cuda')
@@ -287,7 +288,7 @@ def evaluation(niter=100):
     model = RandomModel.load_from_checkpoint("outputs/berlinpro/pt5s96kz/checkpoints/epoch=24999-step=200000.ckpt", critic_net=critic_net,  map_location=device).to(device)
     model.eval()  # Set to eval mode
     
-    for i in trange(3):
+    for i in trange(niter):
         torch.manual_seed(i)
         state = torch.rand((1,8), device=device)
         outputs = {
@@ -307,10 +308,17 @@ def evaluation(niter=100):
         outputs[key] = torch.stack([entry[key] for entry in outputs_list], dim=0)
     
     network_outputs = torch.stack(network_outputs_list).squeeze(1)
-    return outputs, network_outputs
+
+    with open("outputs/eval_dict.pkl", "wb") as f:
+        pickle.dump(outputs, f)
+
+    with open("outputs/network_eval_dict.pkl", "wb") as f:
+        pickle.dump(network_outputs, f)
+
+    return outputs, network_outputs, model
 
 if __name__ == "__main__":
-    outputs, network_outputs = evaluation()
+    outputs, network_outputs, model = evaluation()
     
     plot_time_comparison(outputs, network_outputs.mean().item())
 
