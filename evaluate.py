@@ -289,7 +289,7 @@ def evaluation(repetitions=1000, niter=100):
     model.eval()  # Set to eval mode
     
     for i in trange(repetitions):
-        torch.manual_seed(i)
+        torch.manual_seed(i+10000000)
         state = torch.rand((1,8), device=device)
         outputs = {
             "Powell": eval_scipy("Powell", state, niter),
