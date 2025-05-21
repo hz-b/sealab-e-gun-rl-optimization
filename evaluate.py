@@ -1,14 +1,20 @@
-from scipy.optimize import fmin, fmin_powell, basinhopping
+import logging
+import pickle
+from tqdm.auto import tqdm
+
 import torch
-import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch.optim as optim
-from critic import Critic
-from model import RandomModel
-from tqdm.auto import trange
 from torch.func import vmap, jacrev
 
-from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+import optuna
+
+from critic import Critic
+from model import RandomModel, RandomIterableDataset
+
+from scipy.optimize import minimize, dual_annealing
+from scipy.stats import ttest_rel
 
 from evotorch import Problem
 from evotorch.algorithms import SteadyStateGA, SNES
@@ -17,11 +23,7 @@ from evotorch.operators import (
     GaussianMutation,
 )
 from evotorch.logging import StdOutLogger
-import logging
-import optuna
-import pickle
 
-from critic import Critic
 
 def eval_optuna(state, n_trials=100):
     def eval_critic_solution(solution, state, critic_net):
@@ -124,6 +126,36 @@ def eval_evotorch_single(state, niter):
     best_indices = output.mean(dim=-1).argmin(dim=1)
     return output[torch.arange(niter), best_indices]
 
+def eval_scipy_annealing(state, niter, visit=2.62, accept=-5):
+    device = state.device
+    critic_net = Critic(device=device)
+    
+    optimization_values = []
+
+    def y_const(x):
+        value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state)
+        optimization_values.append(value)
+        return value.mean().item()
+    
+    bounds = [(0., 1.), (0., 1.), (0., 1.), (0., 1.)]
+    
+    # Run dual annealing
+    res = dual_annealing(
+        func=y_const,
+        bounds=bounds,
+        maxiter=niter,
+        maxfun=niter,
+        visit=visit,
+        accept=accept,
+        no_local_search=True  # disables local search to perform normal simulated annealing
+    )
+    
+    # Pad values if fewer than niter
+    while len(optimization_values) < niter:
+        optimization_values.append(optimization_values[-1])
+    
+    return torch.stack(optimization_values[:niter]).squeeze(1)
+
 
 def eval_scipy(method, state, niter, device=torch.device('cpu')):
     state = state.to(device)
@@ -150,7 +182,7 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
 def eval_torch_sgd(state, niter, device=torch.device('cpu')):
     state = state.to(device)
     critic_net = Critic(device=device)
-    action = torch.randn((1, 4), device=device, requires_grad=True)  # Needs grad to be optimized
+    action = torch.rand((1, 4), device=device, requires_grad=True)  # Needs grad to be optimized
     lr = 0.1
 
     optimizer = optim.SGD([action], lr=lr)
@@ -165,17 +197,6 @@ def eval_torch_sgd(state, niter, device=torch.device('cpu')):
         optimizer.step()
 
     return torch.stack(optimization_values).squeeze(1)
-
-def eval_opt(seed):
-    device = torch.device('cpu')
-    torch.manual_seed(seed)
-    state = torch.randn((1,8), device=device)
-    niter = 1000
-    result_dict = {
-            "SGD": eval_torch_sgd(state, niter),
-            #"Powell's": eval_scipy("Powell", state, niter),
-    }
-    return result_dict
 
 def plot_time_comparison(output_data, policy_value):
     clrs = list(plt.cm.tab10.colors)
@@ -212,6 +233,31 @@ def plot_time_comparison(output_data, policy_value):
     ax.legend(fontsize=fontsize_small)
     plt.savefig('outputs/time_comparison.pdf', dpi=300, bbox_inches="tight")
 
+def print_time_to_match(outputs, network_outputs):
+    for key, value in outputs.items():
+        compare = value.mean(2).min(dim=1).values
+        cummin, _ = torch.cummin(value.mean(2), dim=1)
+        matching_bool = cummin <= network_outputs.mean(1).unsqueeze(1)
+        matching_bool_sum = matching_bool.sum(dim=1)
+        iterations_until_matched = (~matching_bool).sum(dim=1)
+        print(key, "& $", matching_bool_sum.sum().item(),'/',len(compare), "$ &", f"${iterations_until_matched.float().mean().item():.2f}" , '\\pm', f"{iterations_until_matched.float().std().item():.2f}$ \\\\")
+
+def print_comparison_table(outputs, network_outputs):
+    def print_line(key, tensor, sig=''):
+        mean = f"${tensor.mean():.3f}"#.replace("e-0", "e-").replace("e+0", "e+")
+        std = f"{tensor.std():.4f}"#.replace("e-0", "e-").replace("e+0", "e+")
+        print(key, "&", f"{mean}\\pm{std}", sig, "$ \\\\")
+    
+    print_line('Deep Learning', network_outputs)
+    
+    for key, value in outputs.items():
+        compare = value.mean(2).min(dim=1).values
+        sig = ''
+        result = ttest_rel(network_outputs.mean(1).cpu(), compare.cpu()).pvalue
+        if (result<=0.99):
+            sig = "\\dagger"
+        print_line(key, compare, sig)
+        
 def plot_evaluation_accuracy(outputs, network_outputs):
     str_f = "{:.6f}"
     plt.tight_layout()
@@ -238,15 +284,51 @@ def plot_evaluation_accuracy(outputs, network_outputs):
     fig.colorbar(hist[3], ax=ax_list, label="Count [#]")
     plt.savefig('outputs/linear_int_rew_comp.pdf',dpi=300, bbox_inches = "tight")
 
+def plot_attribute(model, attribute_index = 5):
+    ds = RandomIterableDataset(500000, 8, 10000000, model.device)
+    z = torch.stack([element for element in ds]).reshape(500, -1, 8)
+    
+    
+    attribute_index = 5
+    l = torch.linspace(0.,1., z.shape[0], device=model.device)
+    
+    # replace all random values from attribute_index with linspace
+    for i in range(z.shape[1]):
+        z[:, i, attribute_index] = l
+    
+    with torch.no_grad():
+        y = model(z)
+    
+    fig, ax = plt.subplots(figsize=(10,6))
+    clrs = list(plt.cm.tab10.colors)
+    for i in range(y.shape[2]):
+        sub_y = y[:,:,i].cpu()
+        var = sub_y.var(dim = 1)
+        mean = sub_y.mean(dim = 1)
+        ax.plot(l.cpu(), mean, label = get_labels('action')[i], c=clrs[i])
+        ax.fill_between(l.cpu(), mean-var, mean+var,alpha=0.25, facecolor=clrs[i])
+    plt.legend()
+    plt.xlabel(get_labels('obs')[attribute_index]+ " [normalized]", fontsize=20)
+    plt.ylabel("Policy action value [normalized]", fontsize=20)
+    plt.savefig("outputs/"+get_labels('obs')[attribute_index] + str(ds.stddev) + '.pdf')
+
+def get_labels(category:str):
+    labels = ['Laser pulse length', 'Laser spot size', 'Gun peak field', 'Gun DC bias field', 'Field flatness', 'Laser horizontal position', 'Laser vertical position', 'Solenoid horizontal position', 'Solenoid vertical position', 'Solenoid angle y-axis', 'Solenoid angle x-axis', 'Emission phase', 'Solenoid strength', 'Cathode position', 'Average horizontal beam size', 'Average vertical beam size', 'Horizontal beam position', 'Vertical beam position', 'Average beam momentum']
+    state_labels = labels[:7] + labels[11:14]
+    if category == "obs":
+        return state_labels[:7] + [state_labels[9]]
+    if category == "action":
+        return labels[7:11]
+    if category == "target":
+        return labels[14:]
+    else:
+        raise Exception("Category not found.")
+    
 def jac_std_avg(model, stddev=.2):
     x = torch.empty((1000, 8), device=model.device)
     torch.nn.init.trunc_normal_(x, mean=0.5, std=stddev, a=-0.5/stddev, b=0.5/stddev)
     
-    labels = ['Laser pulse length', 'Laser spot size', 'Gun peak field', 'Gun DC bias field', 'Field flatness', 'Laser horizontal position', 'Laser vertical position', 'Solenoid horizontal position', 'Solenoid vertical position', 'Solenoid angle y-axis', 'Solenoid angle x-axis', 'Emission phase', 'Solenoid strength', 'Cathode position', 'Average horizontal beam size', 'Average vertical beam size', 'Horizontal beam position', 'Vertical beam position', 'Average beam momentum']
-    state_labels = labels[:7] + labels[11:14]
-    obs_labels = state_labels[:7] + [state_labels[9]]
-    action_labels = labels[7:11]
-    target_labels = labels[14:]
+    
     
     # Ensure policy is in eval mode and x requires grad
     model.eval()
@@ -264,8 +346,8 @@ def jac_std_avg(model, stddev=.2):
     # Plot mean of Jacobian
     plt.figure(figsize=(10, 6))
     im = plt.imshow(jac.mean(0).cpu(), cmap='hot')
-    plt.xticks(range(8), obs_labels, rotation=45, ha='right')
-    plt.yticks(range(4), action_labels)
+    plt.xticks(range(8), get_labels("obs"), rotation=45, ha='right')
+    plt.yticks(range(4), get_labels("action"))
     plt.colorbar(im, label='Count [#]')
     plt.tight_layout()
     plt.savefig(f'outputs/jac_avg_{stddev}.pdf', dpi=300, bbox_inches="tight")
@@ -273,30 +355,33 @@ def jac_std_avg(model, stddev=.2):
     # Plot std of Jacobian
     plt.figure(figsize=(10, 6))
     im = plt.imshow(jac.std(0).cpu(), cmap='hot')
-    plt.xticks(range(8), obs_labels, rotation=45, ha='right')
-    plt.yticks(range(4), action_labels)
+    plt.xticks(range(8), get_labels("obs"), rotation=45, ha='right')
+    plt.yticks(range(4), get_labels("action"))
     plt.colorbar(im, label='Count [#]')
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
-def evaluation(repetitions=1000, niter=100):
+def load_model_critic_net(device, path="outputs/berlinpro/pt5s96kz/checkpoints/epoch=24999-step=200000.ckpt"):
+    critic_net = Critic(device=device)
+    model = RandomModel.load_from_checkpoint(path, critic_net=critic_net,  map_location=device).to(device)
+    model.eval()
+    return model, critic_net
+    
+def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     outputs_list = []
     network_outputs_list = []
-    device=torch.device('cuda')
+    model, critic_net = load_model_critic_net(device)
+    ds = RandomIterableDataset(repetitions, 8, 10000000, device)
     
-    critic_net = Critic(device=device)
-    model = RandomModel.load_from_checkpoint("outputs/berlinpro/pt5s96kz/checkpoints/epoch=24999-step=200000.ckpt", critic_net=critic_net,  map_location=device).to(device)
-    model.eval()  # Set to eval mode
-    
-    for i in trange(repetitions):
-        torch.manual_seed(i+10000000)
-        state = torch.rand((1,8), device=device)
+    for state in tqdm(ds, total=repetitions):
+        state = state.unsqueeze(0)
         outputs = {
             "Powell": eval_scipy("Powell", state, niter),
             "Evotorch": eval_evotorch(state, niter),
             "SNES": eval_evotorch_single(state, niter),
             "SGD": eval_torch_sgd(state, niter),
-            "TPE": eval_optuna(state, niter)
+            "TPE": eval_optuna(state, niter),
+            "Simulated Annealing": eval_scipy_annealing(state, niter)
         }
         outputs_list.append(outputs)
         with torch.no_grad():
@@ -324,4 +409,11 @@ if __name__ == "__main__":
 
     plot_evaluation_accuracy(outputs, network_outputs)
 
+    print_time_to_match(outputs, network_outputs)
+
+    print_comparison_table(outputs, network_outputs)
+
     jac_std_avg(model)
+
+    plot_attribute(model)
+
