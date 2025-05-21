@@ -11,13 +11,13 @@ import random
 import wandb
 
 class RandomIterableDataset(IterableDataset):
-    def __init__(self, num_samples, input_dim, seed, device):
+    def __init__(self, num_samples, input_dim, seed, device, stddev=.2):
         super().__init__()
         self.num_samples = num_samples
         self.input_dim = input_dim
         self.base_seed = seed
         self.seed = seed
-        self.stddev = .2
+        self.stddev = stddev
         self.device = device
 
     def __iter__(self):
@@ -26,6 +26,7 @@ class RandomIterableDataset(IterableDataset):
         # Batch-wise generation is much faster
         x = torch.empty((self.num_samples, self.input_dim), device=self.device)
         torch.nn.init.trunc_normal_(x, mean=0.5, std=self.stddev, a=-0.5/self.stddev, b=0.5/self.stddev)
+        x.clamp_(min=0.0, max=1.0)
         for i in range(self.num_samples):
             yield x[i]
 
