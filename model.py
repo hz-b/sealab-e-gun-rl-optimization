@@ -11,24 +11,28 @@ import random
 import wandb
 
 class RandomIterableDataset(IterableDataset):
-    def __init__(self, num_samples, input_dim, seed, device, stddev=.2):
+    def __init__(self, num_samples, input_dim, seed, device, stddev=.2, fixed_seed=False):
         super().__init__()
         self.num_samples = num_samples
         self.input_dim = input_dim
-        self.base_seed = seed
         self.seed = seed
         self.stddev = stddev
         self.device = device
+        self.fixed_seed=fixed_seed
 
     def __iter__(self):
         torch.manual_seed(self.seed)
-        self.seed = self.seed + 1
-        # Batch-wise generation is much faster
+        if not self.fixed_seed:
+            self.seed = self.seed+1
+        #print(self.seed)
         x = torch.empty((self.num_samples, self.input_dim), device=self.device)
         torch.nn.init.trunc_normal_(x, mean=0.5, std=self.stddev, a=-0.5/self.stddev, b=0.5/self.stddev)
         x.clamp_(min=0.0, max=1.0)
         for i in range(self.num_samples):
             yield x[i]
+
+    def __len__(self):
+        return self.num_samples
 
 # LightningModule
 class RandomModel(L.LightningModule):
@@ -46,6 +50,7 @@ class RandomModel(L.LightningModule):
         self.critic_net = critic_net
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.save_hyperparameters()
         print(self.model)
 
     def forward(self, x):
@@ -61,6 +66,11 @@ class RandomModel(L.LightningModule):
         loss = rewards_mean.mean()
         self.log("train_loss", loss, prog_bar=True)
         return loss
+
+    def validation_step(self, batch, batch_idx):
+        rewards_mean = self.critic_net(self(batch), batch).mean()
+        self.log("val_loss", rewards_mean, prog_bar=True)
+        return rewards_mean
 
     def configure_optimizers(self):
         if self.optimizer == "adam_w":
@@ -91,18 +101,21 @@ class RandomModel(L.LightningModule):
 
 # DataModule that updates seed per epoch
 class RandomDataModule(L.LightningDataModule):
-    def __init__(self, num_samples, input_dim, output_dim, batch_size, seed, device):
+    def __init__(self, num_samples, input_dim, output_dim, batch_size, seed, device, val_samples, val_seed):
         super().__init__()
         self.dataset = RandomIterableDataset(num_samples, input_dim, seed, device)
+        self.val_dataset = RandomIterableDataset(val_samples, input_dim, val_seed, device, fixed_seed=True)
         self.batch_size = batch_size
 
     def train_dataloader(self):
         return DataLoader(self.dataset, batch_size=self.batch_size)
 
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset, batch_size=self.batch_size)
 # Usag
 if __name__ == "__main__":
     batch_size = 64
-    num_samples = 1000
+    num_samples = 100000
     seed = 42
     
     wandb_logger = WandbLogger(
@@ -114,10 +127,10 @@ if __name__ == "__main__":
     critic_net = Critic()
     lr_monitor = LearningRateMonitor(logging_interval='step')
     
-    trainer = L.Trainer(max_epochs=25000, log_every_n_steps=100, accelerator=str(critic_net.model.device.type), logger=wandb_logger, callbacks=[lr_monitor])
+    trainer = L.Trainer(max_epochs=250, log_every_n_steps=500, accelerator=str(critic_net.model.device.type), logger=wandb_logger, callbacks=[lr_monitor])
     
     model = RandomModel(critic_net=critic_net)
-    dm = RandomDataModule(num_samples, model.input_dim, model.output_dim, batch_size, seed, device=critic_net.model.device)
+    dm = RandomDataModule(num_samples, model.input_dim, model.output_dim, batch_size, seed, device=critic_net.model.device, val_samples=100000, val_seed=seed+20000000)
     
     
     trainer.fit(model, datamodule=dm)
