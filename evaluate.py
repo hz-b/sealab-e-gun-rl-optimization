@@ -237,8 +237,8 @@ def print_time_to_match(outputs, network_outputs):
     for key, value in outputs.items():
         compare = value.mean(2).min(dim=1).values
         cummin, _ = torch.cummin(value.mean(2), dim=1)
-        matching_bool = cummin <= network_outputs.mean(1).unsqueeze(1)
-        matching_bool_sum = matching_bool.sum(dim=1)
+        matching_bool = cummin.cpu() <= network_outputs.mean(1).unsqueeze(1).cpu()
+        matching_bool_sum = matching_bool.any(dim=1)
         iterations_until_matched = (~matching_bool).sum(dim=1)
         print(key, "& $", matching_bool_sum.sum().item(),'/',len(compare), "$ &", f"${iterations_until_matched.float().mean().item():.2f}" , '\\pm', f"{iterations_until_matched.float().std().item():.2f}$ \\\\")
 
@@ -266,7 +266,7 @@ def plot_evaluation_accuracy(outputs, network_outputs):
     ax_list = []
     
     for i, (key, value) in enumerate(outputs.items()):
-        ax = fig.add_subplot(1,5,i+1)
+        ax = fig.add_subplot(1,len(outputs),i+1)
         ax_list.append(ax)
         ax.set_title(key)
         ax.set_xlabel("Deep Learning")
