@@ -37,12 +37,20 @@ class Critic:
         value = torch.vstack([torch.abs(output_inv[:,2]), torch.abs(output_inv[:,3]), torch.abs(sizes_inv)]).T
         return value
 
-    def compute_integrated_reward(self, expanded_actions, expanded_states):
+    def compute_integrated_reward(self, expanded_actions, expanded_states, penalize_forbidden_actions=True):
         merged_input = torch.cat([expanded_states[:, :7], expanded_actions, expanded_states[:, -3:]], dim=1)
         output = self.model(merged_input)
-        return self.calculate_reward(output)
+        reward =  self.calculate_reward(output)
+        if penalize_forbidden_actions:
+            forbidden_actions_mask = (expanded_actions < 0.) | (expanded_actions > 1.)
+            forbidden_actions_mask = forbidden_actions_mask.any(dim=1)
+            reward_copy = reward.clone()
+            reward_copy[forbidden_actions_mask] = 1000.
+            return reward_copy
+        
+        return reward
 
-    def __call__(self, action_batch, state_batch):
+    def __call__(self, action_batch, state_batch, penalize_forbidden_actions=True):
         """
         action_batch: (batch_size, 4)
         state_batch: (batch_size, 1, 8)
@@ -66,7 +74,7 @@ class Critic:
         expanded_actions = action_batch.repeat_interleave(N2, dim=0)
 
         # Get reward
-        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states)  # (batch_size * N^2, 3)
+        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, penalize_forbidden_actions)  # (batch_size * N^2, 3)
         rewards = reward_output.view(batch_size, N2, 3)
 
         # Aggregate
