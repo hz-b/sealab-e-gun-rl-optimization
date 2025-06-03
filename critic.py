@@ -37,7 +37,7 @@ class Critic:
         value = torch.vstack([torch.abs(output_inv[:,2]), torch.abs(output_inv[:,3]), torch.abs(sizes_inv)]).T
         return value
 
-    def compute_integrated_reward(self, expanded_actions, expanded_states, penalize_forbidden_actions=True):
+    def compute_integrated_reward(self, expanded_actions, expanded_states, penalize_forbidden_actions=False):
         merged_input = torch.cat([expanded_states[:, :7], expanded_actions, expanded_states[:, -3:]], dim=1)
         output = self.model(merged_input)
         reward =  self.calculate_reward(output)
@@ -50,13 +50,15 @@ class Critic:
         
         return reward
 
-    def __call__(self, action_batch, state_batch, penalize_forbidden_actions=True):
+    def __call__(self, action_batch, state_batch, penalize_forbidden_actions=False, clamping=True):
         """
         action_batch: (batch_size, 4)
         state_batch: (batch_size, 1, 8)
         Returns: (batch_size, 3)
         """
         batch_size = state_batch.shape[0]
+        if clamping:
+            action_batch = torch.clamp(action_batch, min=0.0, max=1.0)
         N2 = self.N ** 2
 
         # Process state
