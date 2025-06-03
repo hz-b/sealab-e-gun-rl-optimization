@@ -90,7 +90,7 @@ class RandomModel(L.LightningModule):
                 "optimizer": optimizer,
                 "lr_scheduler": {
                     "scheduler": ReduceLROnPlateau(optimizer, patience=3),
-                    "monitor": "train_loss",
+                    "monitor": "val_loss",
                     "frequency": 1,
                 },
             }
