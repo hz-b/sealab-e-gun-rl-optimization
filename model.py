@@ -42,7 +42,7 @@ class RandomModel(L.LightningModule):
         self.model = nn.Sequential(nn.Linear(input_dim, self.neuron_factor*5), nn.ReLU(),
                          nn.Linear(self.neuron_factor*5, self.neuron_factor*2), nn.ReLU(),
                          nn.Linear(self.neuron_factor*2, self.neuron_factor*1), nn.ReLU(),
-                         nn.Linear(self.neuron_factor*1, output_dim), nn.Tanh(),
+                         nn.Linear(self.neuron_factor*1, output_dim),
                         )
         self.optimizer = 'adam'
         self.lr_scheduler = None#'plateau'
@@ -114,12 +114,12 @@ class RandomDataModule(L.LightningDataModule):
         return DataLoader(self.val_dataset, batch_size=self.batch_size)
 # Usag
 if __name__ == "__main__":
-    batch_size = 64
+    batch_size = 32
     num_samples = 100000
     seed = 42
     
     wandb_logger = WandbLogger(
-            name="test_no_smoothing_weighted_32_1e4_plateau", project="berlinpro", save_dir='outputs', offline=False
+            name="ref2", project="berlinpro", save_dir='outputs', offline=False
         )
     
     wandb.finish()
