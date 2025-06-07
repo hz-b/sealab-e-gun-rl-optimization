@@ -35,7 +35,7 @@ class RandomIterableDataset(IterableDataset):
         return self.num_samples
 
 class RandomModel(L.LightningModule):
-    def __init__(self, input_dim=8, output_dim=4, critic_net=Critic(), neuron_factor=200, layer_size=None, learning_rate=1e-4, optimizer='adam', lr_scheduler=None):
+    def __init__(self, input_dim=8, output_dim=4, critic_net=Critic(), neuron_factor=500, layer_size=None, learning_rate=1e-4, optimizer='adam', lr_scheduler=None):
         super().__init__()
         self.neuron_factor=neuron_factor
         if layer_size is None:
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     seed = 42
     
     wandb_logger = WandbLogger(
-            name="ref5", project="berlinpro", save_dir='outputs', offline=False
+            name="ref6", project="berlinpro", save_dir='outputs', offline=False
         )
     
     wandb.finish()
