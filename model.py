@@ -58,21 +58,22 @@ class RandomModel(L.LightningModule):
 
     def forward(self, x):
         return ((self.model(x)+1.)/2.)
+    
+
 
     def training_step(self, batch, batch_idx):
         x = batch
-        #loss = batch_integral_reward(self(x), x, self.log).mean()
         rewards_mean = self.critic_net(self(x), x)
-        self.log("x_pos_loss", torch.sqrt(rewards_mean[:,0].mean()))
-        self.log("y_pos_loss", torch.sqrt(rewards_mean[:,1].mean()))
-        self.log("size_loss", torch.sqrt(rewards_mean[:,2].mean()))
+        self.log("x_pos_loss", rewards_mean[:,0].mean())
+        self.log("y_pos_loss", rewards_mean[:,1].mean())
+        self.log("size_loss", rewards_mean[:,2].mean())
         loss = rewards_mean.mean()
-        self.log("train_loss", torch.sqrt(loss), prog_bar=True)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         rewards_mean = self.critic_net(self(batch), batch).mean()
-        self.log("val_loss", torch.sqrt(rewards_mean), prog_bar=True)
+        self.log("val_loss", rewards_mean, prog_bar=True)
         return rewards_mean
 
     def configure_optimizers(self):
