@@ -35,18 +35,20 @@ class RandomIterableDataset(IterableDataset):
         return self.num_samples
 
 class RandomModel(L.LightningModule):
-    def __init__(self, input_dim=8, output_dim=4, critic_net=Critic(), neuron_factor=500, layer_size=None, learning_rate=1e-4, optimizer='adam', lr_scheduler=None, shrink_factor="lin"):
+    def __init__(self, input_dim=8, output_dim=4, critic_net=Critic(), neuron_factor=500, layer_size=None, learning_rate=1e-4, optimizer='adam', lr_scheduler=None, shrink_factor="lin", activation=nn.ReLU(), last_activation=None, batch_norm=False):
         super().__init__()
         self.neuron_factor=neuron_factor
         self.shrink_factor=shrink_factor
+        self.last_activation = nn.Identity() if last_activation is None else last_activation
+        self.activation = activation
         if layer_size is None:
-            self.model = nn.Sequential(nn.Linear(input_dim, self.neuron_factor*5), nn.ReLU(),
-                             nn.Linear(self.neuron_factor*5, self.neuron_factor*2), nn.ReLU(),
-                             nn.Linear(self.neuron_factor*2, self.neuron_factor*1), nn.ReLU(),
-                             nn.Linear(self.neuron_factor*1, output_dim),
+            self.model = nn.Sequential(nn.Linear(input_dim, self.neuron_factor*5), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), activation,
+                             nn.Linear(self.neuron_factor*5, self.neuron_factor*2), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), activation,
+                             nn.Linear(self.neuron_factor*2, self.neuron_factor*1), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), activation,
+                             nn.Linear(self.neuron_factor*1, output_dim), self.last_activation
                             )
         else:
-            self.model = create_sequential(input_dim, output_dim, layer_size, blow=neuron_factor, shrink_factor=shrink_factor)
+            self.model = create_sequential(input_dim, output_dim, layer_size, blow=neuron_factor, shrink_factor=shrink_factor, activation_function=activation, last_activation=last_activation, batch_norm=batch_norm)
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.learning_rate = learning_rate
