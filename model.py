@@ -35,9 +35,10 @@ class RandomIterableDataset(IterableDataset):
         return self.num_samples
 
 class RandomModel(L.LightningModule):
-    def __init__(self, input_dim=8, output_dim=4, critic_net=Critic(), neuron_factor=500, layer_size=None, learning_rate=1e-4, optimizer='adam', lr_scheduler=None):
+    def __init__(self, input_dim=8, output_dim=4, critic_net=Critic(), neuron_factor=500, layer_size=None, learning_rate=1e-4, optimizer='adam', lr_scheduler=None, shrink_factor="lin"):
         super().__init__()
         self.neuron_factor=neuron_factor
+        self.shrink_factor=shrink_factor
         if layer_size is None:
             self.model = nn.Sequential(nn.Linear(input_dim, self.neuron_factor*5), nn.ReLU(),
                              nn.Linear(self.neuron_factor*5, self.neuron_factor*2), nn.ReLU(),
@@ -45,7 +46,7 @@ class RandomModel(L.LightningModule):
                              nn.Linear(self.neuron_factor*1, output_dim),
                             )
         else:
-            self.model = create_sequential(input_dim, output_dim, layer_size, blow=neuron_factor, shrink_factor="lin")
+            self.model = create_sequential(input_dim, output_dim, layer_size, blow=neuron_factor, shrink_factor=shrink_factor)
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.learning_rate = learning_rate
