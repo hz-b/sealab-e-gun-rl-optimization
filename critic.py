@@ -34,7 +34,7 @@ class Critic:
         sizes_max = self.output_max[0]-self.output_min[1]
         sizes_inv = (sizes_max - sizes_min)*sizes + sizes_min
 
-        value = torch.vstack([torch.abs(output_inv[:,2]), torch.abs(output_inv[:,3]), torch.abs(sizes_inv)]).T
+        value = torch.vstack([(output_inv[:,2])**2, (output_inv[:,3])**2, (sizes_inv)**2]).T
         return value
 
     def compute_integrated_reward(self, expanded_actions, expanded_states, penalize_forbidden_actions=False):
