@@ -182,8 +182,23 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     critic_net = Critic(device=device)
     model_paths = {
-        "ref": "3aa8vxal",
-        "AdamW": "6tzutgta",
+        "Reference": "2vzv2nk0",
+        "ScaledSigmoid": "mwjxf0st",
+        "Lin_4": "ehu98hh8",
+        "Lin_5": "hhea93wl",
+        "Log_4": "5wj45jrp",
+        "Mish": "33vt5lny",
+        "Small": "mb1yxtff",
+        "Big": "iwm6scit",
+        "BatchNorm": "1ckq79p7",
+        "BS_16": "0sirvbb5",
+        "BS_64": "j6t73cyh",
+        "LR_1e-3": "1ncaidn5",
+        "LR_1e-5": "5ln6pbe1",
+        "L2": "959mgp0l",
+        "AdamW": "2xh15ihg",
+        "Plat_3": "5dwghjbi",
+        "Plat_5": "vv4ng2p2",
          }
     
     model_dict = model_paths_to_model_dict(model_paths)
