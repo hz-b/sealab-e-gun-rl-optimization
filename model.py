@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from critic import Critic
 import random
 import wandb
-from model_helpers import ScaledSigmoid, create_sequential
+from model_helpers import create_sequential
 
 class RandomIterableDataset(IterableDataset):
     def __init__(self, num_samples, input_dim, seed, device, stddev=.2, fixed_seed=False):
@@ -71,6 +71,8 @@ class RandomModel(L.LightningModule):
         self.log("y_pos_loss", rewards_mean[:,1].mean())
         self.log("size_loss", rewards_mean[:,2].mean())
         loss = rewards_mean.mean()
+        if isinstance(self.last_activation, nn.Sigmoid):
+            loss = loss * 0.8 + 0.1
         self.log("train_loss", loss, prog_bar=True)
         return loss
 

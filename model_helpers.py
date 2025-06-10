@@ -2,18 +2,6 @@ import torch
 from torch import nn
 import math
 
-class ScaledSigmoid(nn.Module):
-    def __init__(self, scale_min=0.1, scale_max=0.9):
-        super().__init__()
-        self.scale_min = scale_min
-        self.scale_max = scale_max
-
-    def forward(self, x):
-        x = self.scale_min + (self.scale_max - self.scale_min) * x
-        x = torch.sigmoid(x)
-        x = (x - self.scale_min) / (self.scale_max - self.scale_min)
-        return x
-
 def create_sequential(input_length, output_length, layer_size, blow: int | float = 0, shrink_factor="log", activation_function=nn.ReLU(), last_activation=None, batch_norm=False, layer_norm=False):
     layers = [input_length]
     blow_disabled = blow == 1 or blow == 0
