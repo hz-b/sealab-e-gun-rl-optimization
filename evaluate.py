@@ -17,13 +17,19 @@ from scipy.optimize import minimize, dual_annealing
 from scipy.stats import ttest_rel
 
 from evotorch import Problem
-from evotorch.algorithms import SteadyStateGA, SNES
+from evotorch.algorithms import SteadyStateGA, SNES, PGPE
 from evotorch.operators import (
     SimulatedBinaryCrossOver,
     GaussianMutation,
 )
 from evotorch.logging import StdOutLogger
 
+from evaluate_nn import get_checkpoint_path
+
+import numpy as np
+import pybobyqa
+
+from ax import optimize
 
 def eval_optuna(state, n_trials=100):
     def eval_critic_solution(solution, state, critic_net):
@@ -51,8 +57,44 @@ def eval_optuna(state, n_trials=100):
     best_solution = torch.tensor([best_params[f"x{i}"] for i in range(4)], device=state.device)
     return torch.stack(eval_history).squeeze(1)
 
+def eval_ax(state, n_trials=100):
+    def eval_critic_solution(solution, state, critic_net):
+        # solution: list of floats [x0, x1, x2, x3]
+        solution_tensor = torch.tensor(solution, dtype=torch.float32, device=state.device).unsqueeze(0)
+        init_problem = state.repeat(1, 1)
+        output = critic_net(solution_tensor, init_problem)  # shape: (1, 3)
+        return output
 
-def eval_evotorch(state, niter):
+    eval_history = []
+
+    def ax_objective(parameterization):
+        # Get solution vector from Ax parameter dictionary
+        solution = [parameterization[f"x{i}"] for i in range(4)]
+        
+        # Evaluate solution
+        critic_net = Critic(device=state.device)
+        result = eval_critic_solution(solution, state, critic_net)
+        eval_history.append(result)
+        
+        return result.mean().item()
+
+    # Define Ax search space
+    parameters = [
+        {"name": f"x{i}", "type": "range", "bounds": [0.0, 1.0]} for i in range(4)
+    ]
+
+    # Run Ax optimization
+    best_parameters, values, experiment, model = optimize(
+        parameters=parameters,
+        evaluation_function=ax_objective,
+        total_trials=n_trials,
+        minimize=True,
+    )
+
+    best_solution = torch.tensor([best_parameters[f"x{i}"] for i in range(4)], device=state.device)
+    return torch.stack(eval_history).squeeze(1)
+
+def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
     logging.getLogger("evotorch").setLevel(logging.WARNING)
     critic_net = Critic(device=state.device)
     popsize=200
@@ -60,7 +102,7 @@ def eval_evotorch(state, niter):
     #print(init_problem.shape)
     optimization_values = []
     def critic_problem(x):
-        output = critic_net(x, init_problem)
+        output = critic_net(x, init_problem, clamping=False, penalize_forbidden_actions=True)
         optimization_values.append(output)
         return output
                                           
@@ -79,12 +121,12 @@ def eval_evotorch(state, niter):
     ga.use(
         SimulatedBinaryCrossOver(
             prob,
-            tournament_size=2,
-            cross_over_rate=1.0,
-            eta=8,
+            tournament_size=tournament_size,
+            cross_over_rate=cross_over_rate,
+            eta=eta,
         )
     )
-    ga.use(GaussianMutation(prob, stdev=0.03))
+    ga.use(GaussianMutation(prob, stdev=stdev))
     
     ga.run(niter//2)
     output = torch.stack(optimization_values)
@@ -92,41 +134,51 @@ def eval_evotorch(state, niter):
     best_indices = output.mean(dim=-1).argmin(dim=1)
     return output[torch.arange(niter), best_indices]
 
-def eval_evotorch_single(state, niter):
+def eval_evotorch_GA(state, niter, popsize=500, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
     logging.getLogger("evotorch").setLevel(logging.WARNING)
-
     critic_net = Critic(device=state.device)
-    popsize = 200
-    init_problem = state.repeat_interleave(popsize, dim=0)
-
+    init_problem_one = state.repeat_interleave(popsize, dim=0)
     optimization_values = []
-
     def critic_problem(x):
-        output = critic_net(x, init_problem)  # shape: (batch, 3)
-        scalar = output.mean(dim=1)           # shape: (batch,) — single objective
+        if cross_over_rate != 1.0:
+            init_problem = state.repeat_interleave(x.shape[0], dim=0)
+        else:
+            init_problem = init_problem_one
+        output = critic_net(x, init_problem, clamping=False, penalize_forbidden_actions=True)
+        scalar = output.mean(dim=1)
         optimization_values.append(output)
         return scalar
-
-    problem = Problem(
-        "min",  # Single-objective
+                                          
+    prob = Problem(
+        ["min"],
         critic_problem,
         initial_bounds=(0.0, 1.0),
         solution_length=4,
         vectorized=True,
         device=state.device
     )
+    
+    # Works like NSGA-II for multiple objectives
+    ga = SteadyStateGA(prob, popsize=popsize)
+    ga.use(
+        SimulatedBinaryCrossOver(
+            prob,
+            tournament_size=tournament_size,
+            cross_over_rate=cross_over_rate,
+            eta=eta,
+        )
+    )
+    ga.use(GaussianMutation(prob, stdev=stdev))
+    
+    ga.run(niter//2)
+    if cross_over_rate != 1.0:
+        optimization_values = [i[:popsize] for i in optimization_values]
+    output = torch.stack(optimization_values)
 
-    searcher = SNES(problem, popsize=popsize, stdev_init=10.0)
-
-    searcher.run(num_generations=niter)
-
-    output = torch.stack(optimization_values)  # shape: (niter, popsize, 3)
-
-    # Instead of selecting best post-hoc, just return all
     best_indices = output.mean(dim=-1).argmin(dim=1)
     return output[torch.arange(niter), best_indices]
-
-def eval_scipy_annealing(state, niter, visit=2.62, accept=-5):
+    
+def eval_scipy_annealing(state, niter, visit=2.62, accept=-5, initial_temp=5230.0):
     device = state.device
     critic_net = Critic(device=device)
     
@@ -135,6 +187,7 @@ def eval_scipy_annealing(state, niter, visit=2.62, accept=-5):
     def y_const(x):
         value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state)
         optimization_values.append(value)
+        #print(x, value.mean().item())
         return value.mean().item()
     
     bounds = [(0., 1.), (0., 1.), (0., 1.), (0., 1.)]
@@ -147,7 +200,8 @@ def eval_scipy_annealing(state, niter, visit=2.62, accept=-5):
         maxfun=niter,
         visit=visit,
         accept=accept,
-        no_local_search=True  # disables local search to perform normal simulated annealing
+        initial_temp=initial_temp,
+        no_local_search=False  # disables local search to perform normal simulated annealing
     )
     
     # Pad values if fewer than niter
@@ -179,24 +233,64 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
         optimization_values.append(optimization_values[-1])
     return torch.stack(optimization_values[:niter]).squeeze(1)
 
-def eval_torch_sgd(state, niter, device=torch.device('cpu')):
+def eval_torch_sgd(state, niter, device=torch.device('cpu'), initial_action=None):
     state = state.to(device)
     critic_net = Critic(device=device)
-    action = torch.rand((1, 4), device=device, requires_grad=True)  # Needs grad to be optimized
+    if initial_action is None:
+        initial_action = torch.rand((1, 4), device=device, requires_grad=True)  # Needs grad to be optimized
+    else:
+        initial_action = initial_action.clone().detach().requires_grad_(True)
+        print(initial_action)
     lr = 0.1
 
-    optimizer = optim.SGD([action], lr=lr)
+    optimizer = optim.SGD([initial_action], lr=lr)
     optimization_values = []
 
     for _ in range(niter):
         optimizer.zero_grad()
-        value = critic_net(action.view(1, -1), state)
+        value = critic_net(initial_action.view(1, -1), state)
         loss = value.mean()
         optimization_values.append(value.detach())
         loss.backward()
         optimizer.step()
 
     return torch.stack(optimization_values).squeeze(1)
+
+def eval_pybobyqa(state, niter, initial_action=None, local_only=True):
+    device = state.device
+    eval_history = []
+
+    def objective(x_np):
+        x = torch.tensor(x_np, dtype=torch.float32, device=device).unsqueeze(0)  # (1, 4)
+        init_problem = state.repeat(1, 1)  # assume state is (1, dim)
+        critic_net = Critic(device=device)
+        output = critic_net(x, init_problem)  # (1, 3)
+        eval_history.append(output)
+        return output.mean().item()
+
+    # Initial point (anywhere in [0, 1]^4 or further if bounds are relaxed)
+    x0 = np.array([0.5, 0.5, 0.5, 0.5]) if initial_action is None else initial_action.detach().cpu().numpy().squeeze(0)
+    print(x0)
+    lower = np.array([0.0, 0.0, 0.0, 0.0])
+    upper = np.array([1.0, 1.0, 1.0, 1.0])
+
+    print("Running Py-BOBYQA optimization")
+    if local_only:
+        print("→ Local minimum only")
+    else:
+        print("→ Seeking global minimum")
+
+    soln = pybobyqa.solve(
+        objective,
+        x0,
+        bounds=(lower, upper),
+        maxfun=niter,
+        seek_global_minimum=not local_only,
+    )
+
+    print("\nBest solution found:", soln.x)
+    print("Objective value at best solution:", soln.f)
+    return torch.stack(eval_history).squeeze(1)
 
 def plot_time_comparison(output_data, policy_value):
     clrs = list(plt.cm.tab10.colors)
@@ -228,7 +322,7 @@ def plot_time_comparison(output_data, policy_value):
         ax.plot(range(l), mean.cpu(), label=key, color=clrs[i+1], linestyle='solid')
         ax.fill_between(range(l), (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[i+1])
     
-    ax.plot([-1, l], [0, 0], color='lightgrey', lw=2, linestyle='dotted', alpha=0.7)
+    #ax.plot([-1, l], [0, 0], color='lightgrey', lw=2, linestyle='dotted', alpha=0.7)
     ax.scatter([0], policy_value, color=clrs[0], s=100, zorder=5)
     ax.legend(fontsize=fontsize_small)
     plt.savefig('outputs/time_comparison.pdf', dpi=300, bbox_inches="tight")
@@ -244,7 +338,7 @@ def print_time_to_match(outputs, network_outputs):
 
 def print_comparison_table(outputs, network_outputs):
     def print_line(key, tensor, sig=''):
-        mean = f"${tensor.mean():.3f}"#.replace("e-0", "e-").replace("e+0", "e+")
+        mean = f"${tensor.mean():.10f}"#.replace("e-0", "e-").replace("e+0", "e+")
         std = f"{tensor.std():.4f}"#.replace("e-0", "e-").replace("e+0", "e+")
         print(key, "&", f"{mean}\\pm{std}", sig, "$ \\\\")
     
@@ -361,8 +455,9 @@ def jac_std_avg(model, stddev=.2):
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
-def load_model_critic_net(device, path="outputs/berlinpro/pt5s96kz/checkpoints/epoch=24999-step=200000.ckpt"):
+def load_model_critic_net(device, path='ehu98hh8'):
     critic_net = Critic(device=device)
+    path = get_checkpoint_path(path)
     model = RandomModel.load_from_checkpoint(path, critic_net=critic_net,  map_location=device).to(device)
     model.eval()
     return model, critic_net
@@ -372,21 +467,26 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     network_outputs_list = []
     model, critic_net = load_model_critic_net(device)
     ds = RandomIterableDataset(repetitions, 8, 10000000, device)
-    
+
+
+
     for state in tqdm(ds, total=repetitions):
         state = state.unsqueeze(0)
-        outputs = {
-            "Powell": eval_scipy("Powell", state, niter),
-            "Evotorch": eval_evotorch(state, niter),
-            "SNES": eval_evotorch_single(state, niter),
-            "SGD": eval_torch_sgd(state, niter),
-            "TPE": eval_optuna(state, niter),
-            "Simulated Annealing": eval_scipy_annealing(state, niter)
-        }
-        outputs_list.append(outputs)
         with torch.no_grad():
             policy_action = model(state)
         network_outputs_list.append(critic_net(policy_action, state))
+        outputs = {
+            "Powell's Method": eval_scipy("Powell", state, niter),
+            "Simulated Annealing": eval_scipy_annealing(state, niter),
+            "SGD": eval_torch_sgd(state.cpu(), niter),
+            "TPE": eval_optuna(state, niter),
+            "GA_200": eval_evotorch_GA(state, niter, popsize=200),
+            "GA_500": eval_evotorch_GA(state, niter, popsize=500),
+            #"SNES": eval_evotorch_single(state, niter),
+            #"Ax": eval_ax(state, niter),
+            #"BOBYQA-global": eval_pybobyqa(state, niter, local_only=False),
+        }
+        outputs_list.append(outputs)
         
     outputs = {}
     for key in outputs_list[0]:
@@ -403,7 +503,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     return outputs, network_outputs, model
 
 if __name__ == "__main__":
-    outputs, network_outputs, model = evaluation(niter=100)
+    outputs, network_outputs, model = evaluation(niter=50)
     
     plot_time_comparison(outputs, network_outputs.mean().item())
 
