@@ -26,11 +26,6 @@ from evotorch.logging import StdOutLogger
 
 from evaluate_nn import get_checkpoint_path
 
-import numpy as np
-import pybobyqa
-
-from ax import optimize
-
 def eval_optuna(state, n_trials=100):
     def eval_critic_solution(solution, state, critic_net):
         # solution: numpy array of shape (4,)
@@ -55,43 +50,6 @@ def eval_optuna(state, n_trials=100):
     
     best_params = study.best_params
     best_solution = torch.tensor([best_params[f"x{i}"] for i in range(4)], device=state.device)
-    return torch.stack(eval_history).squeeze(1)
-
-def eval_ax(state, n_trials=100):
-    def eval_critic_solution(solution, state, critic_net):
-        # solution: list of floats [x0, x1, x2, x3]
-        solution_tensor = torch.tensor(solution, dtype=torch.float32, device=state.device).unsqueeze(0)
-        init_problem = state.repeat(1, 1)
-        output = critic_net(solution_tensor, init_problem)  # shape: (1, 3)
-        return output
-
-    eval_history = []
-
-    def ax_objective(parameterization):
-        # Get solution vector from Ax parameter dictionary
-        solution = [parameterization[f"x{i}"] for i in range(4)]
-        
-        # Evaluate solution
-        critic_net = Critic(device=state.device)
-        result = eval_critic_solution(solution, state, critic_net)
-        eval_history.append(result)
-        
-        return result.mean().item()
-
-    # Define Ax search space
-    parameters = [
-        {"name": f"x{i}", "type": "range", "bounds": [0.0, 1.0]} for i in range(4)
-    ]
-
-    # Run Ax optimization
-    best_parameters, values, experiment, model = optimize(
-        parameters=parameters,
-        evaluation_function=ax_objective,
-        total_trials=n_trials,
-        minimize=True,
-    )
-
-    best_solution = torch.tensor([best_parameters[f"x{i}"] for i in range(4)], device=state.device)
     return torch.stack(eval_history).squeeze(1)
 
 def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
@@ -255,42 +213,6 @@ def eval_torch_sgd(state, niter, device=torch.device('cpu'), initial_action=None
         optimizer.step()
 
     return torch.stack(optimization_values).squeeze(1)
-
-def eval_pybobyqa(state, niter, initial_action=None, local_only=True):
-    device = state.device
-    eval_history = []
-
-    def objective(x_np):
-        x = torch.tensor(x_np, dtype=torch.float32, device=device).unsqueeze(0)  # (1, 4)
-        init_problem = state.repeat(1, 1)  # assume state is (1, dim)
-        critic_net = Critic(device=device)
-        output = critic_net(x, init_problem)  # (1, 3)
-        eval_history.append(output)
-        return output.mean().item()
-
-    # Initial point (anywhere in [0, 1]^4 or further if bounds are relaxed)
-    x0 = np.array([0.5, 0.5, 0.5, 0.5]) if initial_action is None else initial_action.detach().cpu().numpy().squeeze(0)
-    print(x0)
-    lower = np.array([0.0, 0.0, 0.0, 0.0])
-    upper = np.array([1.0, 1.0, 1.0, 1.0])
-
-    print("Running Py-BOBYQA optimization")
-    if local_only:
-        print("→ Local minimum only")
-    else:
-        print("→ Seeking global minimum")
-
-    soln = pybobyqa.solve(
-        objective,
-        x0,
-        bounds=(lower, upper),
-        maxfun=niter,
-        seek_global_minimum=not local_only,
-    )
-
-    print("\nBest solution found:", soln.x)
-    print("Objective value at best solution:", soln.f)
-    return torch.stack(eval_history).squeeze(1)
 
 def plot_time_comparison(output_data, policy_value):
     clrs = list(plt.cm.tab10.colors)
@@ -483,8 +405,6 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
             "GA_200": eval_evotorch_GA(state, niter, popsize=200),
             "GA_500": eval_evotorch_GA(state, niter, popsize=500),
             #"SNES": eval_evotorch_single(state, niter),
-            #"Ax": eval_ax(state, niter),
-            #"BOBYQA-global": eval_pybobyqa(state, niter, local_only=False),
         }
         outputs_list.append(outputs)
         
