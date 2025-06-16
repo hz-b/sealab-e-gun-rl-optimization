@@ -134,7 +134,7 @@ def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over
     best_indices = output.mean(dim=-1).argmin(dim=1)
     return output[torch.arange(niter), best_indices]
 
-def eval_evotorch_GA(state, niter, popsize=500, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
+def eval_evotorch_GA(state, niter, popsize=500, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
     logging.getLogger("evotorch").setLevel(logging.WARNING)
     critic_net = Critic(device=state.device)
     init_problem_one = state.repeat_interleave(popsize, dim=0)
@@ -478,8 +478,8 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
         outputs = {
             "Powell's Method": eval_scipy("Powell", state, niter),
             "Simulated Annealing": eval_scipy_annealing(state, niter),
-            "SGD": eval_torch_sgd(state.cpu(), niter),
-            "TPE": eval_optuna(state, niter),
+            #"SGD": eval_torch_sgd(state.cpu(), niter),
+            #"TPE": eval_optuna(state, niter),
             "GA_200": eval_evotorch_GA(state, niter, popsize=200),
             "GA_500": eval_evotorch_GA(state, niter, popsize=500),
             #"SNES": eval_evotorch_single(state, niter),
