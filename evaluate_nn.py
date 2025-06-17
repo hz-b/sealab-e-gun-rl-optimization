@@ -77,6 +77,7 @@ def statistics(result_dict, reference_key="ref"):
 def model_paths_to_model_dict(model_paths):
     models_dict = {}
     for key, identifier in model_paths.items():
+        print(key)
         path = get_checkpoint_path(identifier)
         models_dict[key] = RandomModel.load_from_checkpoint(
         checkpoint_path=path,
@@ -98,13 +99,14 @@ def evaluate(seed_shift, model, critic_net, num_samples=100000):
         output_tensor = torch.cat(output_list)
     return output_tensor
 
-def evaluate_model_dict_to_result_dict(model_dict, num_samples=100000):
+def evaluate_model_dict_to_result_dict(model_dict, num_samples=100):
     result_dict = {}
     for i, (key, model) in tqdm(enumerate(model_dict.items()), total=len(model_dict)):
         result_dict[key] = evaluate(i, model, critic_net, num_samples)
     return result_dict
 
-def scientific(value: float, precision: int = 2) -> str:
+def scientific(value: float, precision: int = 3) -> str:
+    return f"{value*100:.{precision}f}"
     """
     Convert a float to a LaTeX-formatted scientific notation string.
 
@@ -126,14 +128,14 @@ def scientific(value: float, precision: int = 2) -> str:
     return f"{base} \\times 10^{{{exp}}}"
     
 @staticmethod
-def result_dict_to_latex(statistics_dict, reference_key="ref", statistics_table=True):
+def statistics_dict_to_latex(statistics_dict, reference_key="ref", statistics_table=True):
     subtrahent = 0 if statistics_table else 1
-    if len(result_dict) < 4:
-        alignment = "l" * (len(statistics_dict)-subtrahent)
+    if len(statistics_dict) < 4:
+        alignment = "l" * (4-subtrahent)
         table_environment = "tabular"
     else:
         
-        alignment = r"""*{"""+str(len(statistics_dict)-subtrahent)+r"""}{>{\centering\arraybackslash}X}"""
+        alignment = r"""*{"""+str(3-subtrahent)+r"""}{>{\centering\arraybackslash}X}"""
         table_environment = "tabularx"
     
     if table_environment =="tabularx":
@@ -159,10 +161,10 @@ def result_dict_to_latex(statistics_dict, reference_key="ref", statistics_table=
     output_string += r"\hline" + "\n"
     
     for model_key, (mean, std_dev, is_best, is_significant, p_value) in statistics_dict.items():
-        model_row_element = scientific(mean)
+        model_row_element = scientific(mean, precision=5)
         if is_best:
             model_row_element = r"\mathbf{" + model_row_element + r"}"
-        model_row_element = "$"+model_row_element+r" \pm "+scientific(std_dev)+"$ "
+        model_row_element = "$"+model_row_element+r" \pm "+ scientific(std_dev) +"$ "
         if not model_key == reference_key:
             if statistics_table:
                 model_row_element += "& $(" + scientific(p_value[0]) + "," + scientific(p_value[1]) + ")$"
@@ -171,7 +173,6 @@ def result_dict_to_latex(statistics_dict, reference_key="ref", statistics_table=
         else:
             if statistics_table:
                 model_row_element += "& ---"
-        #print(model_row_element)
         output_string += model_key + " & " + model_row_element + r" \\" + "\n"
 
     output_string += r"""\hline
@@ -182,8 +183,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     critic_net = Critic(device=device)
     model_paths = {
-        "Reference": "2vzv2nk0",
-        "ScaledSigmoid": "mwjxf0st",
+        "Reference": "fsbk3ov8",
+        "ScaledSigmoid": "di9ooxpy",
         "Lin_4": "ehu98hh8",
         "Lin_5": "hhea93wl",
         "Log_4": "5wj45jrp",
@@ -202,10 +203,10 @@ if __name__ == "__main__":
          }
     
     model_dict = model_paths_to_model_dict(model_paths)
-    result_dict = evaluate_model_dict_to_result_dict(model_dict, num_samples=10)
+    result_dict = evaluate_model_dict_to_result_dict(model_dict)
     
     with open("outputs/result_dict.pkl", "wb") as f:
         pickle.dump(result_dict, f)
     
-    statistics_dict = statistics(result_dict)
-    print(result_dict_to_latex(statistics_dict))
+    statistics_dict = statistics(result_dict, reference_key="Reference")
+    print(statistics_dict_to_latex(statistics_dict))

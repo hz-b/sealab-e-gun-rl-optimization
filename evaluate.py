@@ -1,11 +1,13 @@
 import logging
 import pickle
+import time
 from tqdm.auto import tqdm
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.func import vmap, jacrev
+import torch.utils.benchmark as benchmark
 
 import matplotlib.pyplot as plt
 import optuna
@@ -27,6 +29,8 @@ from evotorch.logging import StdOutLogger
 from evaluate_nn import get_checkpoint_path
 
 def eval_optuna(state, n_trials=100):
+    start_time = time.time()
+    
     def eval_critic_solution(solution, state, critic_net):
         # solution: numpy array of shape (4,)
         solution_tensor = torch.tensor(solution, dtype=torch.float32, device=state.device).unsqueeze(0)
@@ -46,18 +50,29 @@ def eval_optuna(state, n_trials=100):
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study = optuna.create_study(direction="minimize")
-    study.optimize(lambda trial: optuna_objective(trial, state), n_trials=n_trials, show_progress_bar=True)
+
     
+    study.optimize(lambda trial: optuna_objective(trial, state), n_trials=n_trials, show_progress_bar=True)
+
     best_params = study.best_params
     best_solution = torch.tensor([best_params[f"x{i}"] for i in range(4)], device=state.device)
-    return torch.stack(eval_history).squeeze(1)
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return torch.stack(eval_history).squeeze(1), elapsed_time
 
 def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
+    if state.device.type == "cuda":
+        warmup_gpu(state.device)
+
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    start_time = time.time()
+    
     logging.getLogger("evotorch").setLevel(logging.WARNING)
     critic_net = Critic(device=state.device)
     popsize=200
     init_problem = state.repeat_interleave(popsize, dim=0)
-    #print(init_problem.shape)
     optimization_values = []
     def critic_problem(x):
         output = critic_net(x, init_problem, clamping=False, penalize_forbidden_actions=True)
@@ -90,9 +105,20 @@ def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over
     output = torch.stack(optimization_values)
 
     best_indices = output.mean(dim=-1).argmin(dim=1)
-    return output[torch.arange(niter), best_indices]
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return output[torch.arange(niter), best_indices], elapsed_time
 
 def eval_evotorch_GA(state, niter, popsize=500, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
+    if state.device.type == "cuda":
+        warmup_gpu(state.device)
+
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    start_time = time.time()
+    
     logging.getLogger("evotorch").setLevel(logging.WARNING)
     critic_net = Critic(device=state.device)
     init_problem_one = state.repeat_interleave(popsize, dim=0)
@@ -134,10 +160,15 @@ def eval_evotorch_GA(state, niter, popsize=500, stdev=0.01, tournament_size=64, 
     output = torch.stack(optimization_values)
 
     best_indices = output.mean(dim=-1).argmin(dim=1)
-    return output[torch.arange(niter), best_indices]
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return output[torch.arange(niter), best_indices], elapsed_time
     
-def eval_scipy_annealing(state, niter, visit=2.62, accept=-5, initial_temp=5230.0):
-    device = state.device
+def eval_scipy_annealing(state, niter, device=torch.device('cpu'), visit=2.62, accept=-5, initial_temp=5230.0):
+    state = state.to(device)
+    start_time = time.time()
     critic_net = Critic(device=device)
     
     optimization_values = []
@@ -145,7 +176,6 @@ def eval_scipy_annealing(state, niter, visit=2.62, accept=-5, initial_temp=5230.
     def y_const(x):
         value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state)
         optimization_values.append(value)
-        #print(x, value.mean().item())
         return value.mean().item()
     
     bounds = [(0., 1.), (0., 1.), (0., 1.), (0., 1.)]
@@ -165,12 +195,15 @@ def eval_scipy_annealing(state, niter, visit=2.62, accept=-5, initial_temp=5230.
     # Pad values if fewer than niter
     while len(optimization_values) < niter:
         optimization_values.append(optimization_values[-1])
-    
-    return torch.stack(optimization_values[:niter]).squeeze(1)
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time
 
 
 def eval_scipy(method, state, niter, device=torch.device('cpu')):
     state = state.to(device)
+    start_time = time.time()
     critic_net = Critic(device=device)
     initial_action = torch.rand((4), device=device)
     
@@ -189,16 +222,23 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
     )
     while len(optimization_values) < niter:
         optimization_values.append(optimization_values[-1])
-    return torch.stack(optimization_values[:niter]).squeeze(1)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time
 
 def eval_torch_sgd(state, niter, device=torch.device('cpu'), initial_action=None):
+    if state.device.type == "cuda":
+        warmup_gpu(state.device)
+
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    start_time = time.time()
     state = state.to(device)
     critic_net = Critic(device=device)
     if initial_action is None:
         initial_action = torch.rand((1, 4), device=device, requires_grad=True)  # Needs grad to be optimized
     else:
         initial_action = initial_action.clone().detach().requires_grad_(True)
-        print(initial_action)
     lr = 0.1
 
     optimizer = optim.SGD([initial_action], lr=lr)
@@ -211,10 +251,46 @@ def eval_torch_sgd(state, niter, device=torch.device('cpu'), initial_action=None
         optimization_values.append(value.detach())
         loss.backward()
         optimizer.step()
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return torch.stack(optimization_values).squeeze(1), elapsed_time
 
-    return torch.stack(optimization_values).squeeze(1)
+def warmup_gpu(device):
+    a = torch.randn(3000, 3000, device=device)
+    b = torch.randn(3000, 3000, device=device)
+    torch.cuda.synchronize()
+    _ = torch.mm(a, b)
+    torch.cuda.synchronize()
 
-def plot_time_comparison(output_data, policy_value):
+def benchmark_model(model, input_count=4, samples=1):
+    # Set model to eval mode and move to device
+    if isinstance(model, nn.Module):
+        model.eval()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+    #input_shape = (samples, input_count)
+    # Dummy input
+    dummy_input = torch.randn(samples, input_count).to(device)
+    
+    # Warm-up
+    for _ in range(10):
+        with torch.no_grad():
+            _ = model(dummy_input)
+    
+    # Use benchmark.Timer
+    timer = benchmark.Timer(
+        stmt='model(dummy_input)',
+        globals={'model': model, 'dummy_input': dummy_input},
+        label='Model Inference',
+    )
+    
+    result = timer.timeit(1000)
+    print(result)  # Automatically shows time per run and other stats
+
+
+def plot_time_comparison(outputs, network_outputs):
     clrs = list(plt.cm.tab10.colors)
     clrs[3], clrs[0] = clrs[0], clrs[3]
     clrs[-1], clrs[2] = clrs[2], clrs[-1]
@@ -222,15 +298,19 @@ def plot_time_comparison(output_data, policy_value):
     fontsize = 24
     fontsize_small = 18
     ax.set_xlabel("Evaluation count [#]", fontsize=fontsize)
-    ax.set_ylabel("Reward [arb.u.]", fontsize=fontsize)
+    ax.set_ylabel("Mean $\\mathcal{L}_l$", fontsize=fontsize)
     ax.tick_params(axis='x', labelsize=fontsize_small)
     ax.tick_params(axis='y', labelsize=fontsize_small)
     
-    l = output_data[next(iter(output_data))].shape[1]  # number of steps
+    l = outputs[next(iter(outputs))][0].shape[1]  # number of steps
+
+    mean = network_outputs[0].mean()
+    std = network_outputs[0].mean(dim=1).std()
+    ax.plot(range(l), [mean.cpu() for i in range(l)], label="Decision Model", color=clrs[0], linestyle=(0, (5, 1)))
+    ax.fill_between(range(l), (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[0])
+    ax.scatter([0], mean.cpu(), color=clrs[0], s=100, zorder=5)
     
-    ax.plot(range(l), [policy_value for i in range(l)], label="Deep Learning", color=clrs[0], linestyle=(0, (5, 1)))
-    
-    for i, (key, value) in enumerate(output_data.items()):
+    for i, (key, (value, _)) in enumerate(outputs.items()):
         # Mean over all features
         tracked = value.mean(-1)  # (runs, steps)
     
@@ -243,36 +323,34 @@ def plot_time_comparison(output_data, policy_value):
     
         ax.plot(range(l), mean.cpu(), label=key, color=clrs[i+1], linestyle='solid')
         ax.fill_between(range(l), (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[i+1])
-    
-    #ax.plot([-1, l], [0, 0], color='lightgrey', lw=2, linestyle='dotted', alpha=0.7)
-    ax.scatter([0], policy_value, color=clrs[0], s=100, zorder=5)
+
     ax.legend(fontsize=fontsize_small)
     plt.savefig('outputs/time_comparison.pdf', dpi=300, bbox_inches="tight")
 
 def print_time_to_match(outputs, network_outputs):
-    for key, value in outputs.items():
+    for key, (value, _) in outputs.items():
         compare = value.mean(2).min(dim=1).values
         cummin, _ = torch.cummin(value.mean(2), dim=1)
-        matching_bool = cummin.cpu() <= network_outputs.mean(1).unsqueeze(1).cpu()
+        matching_bool = cummin.cpu() <= network_outputs[0].mean(1).unsqueeze(1).cpu()
         matching_bool_sum = matching_bool.any(dim=1)
         iterations_until_matched = (~matching_bool).sum(dim=1)
         print(key, "& $", matching_bool_sum.sum().item(),'/',len(compare), "$ &", f"${iterations_until_matched.float().mean().item():.2f}" , '\\pm', f"{iterations_until_matched.float().std().item():.2f}$ \\\\")
 
 def print_comparison_table(outputs, network_outputs):
-    def print_line(key, tensor, sig=''):
-        mean = f"${tensor.mean():.10f}"#.replace("e-0", "e-").replace("e+0", "e+")
+    def print_line(key, tensor, time, sig=''):
+        mean = f"${tensor.mean():.4f}"#.replace("e-0", "e-").replace("e+0", "e+")
         std = f"{tensor.std():.4f}"#.replace("e-0", "e-").replace("e+0", "e+")
-        print(key, "&", f"{mean}\\pm{std}", sig, "$ \\\\")
+        print(key, "&", f"{mean}\\pm{std}", sig, "$ &", f"${time.mean():.4f}$ \\\\")
     
-    print_line('Deep Learning', network_outputs)
+    print_line('Decision Model', network_outputs[0].mean(1), network_outputs[1].mean())
     
-    for key, value in outputs.items():
+    for key, (value, time) in outputs.items():
         compare = value.mean(2).min(dim=1).values
         sig = ''
-        result = ttest_rel(network_outputs.mean(1).cpu(), compare.cpu()).pvalue
+        result = ttest_rel(network_outputs[0].mean(1).cpu(), compare.cpu()).pvalue
         if (result<=0.99):
             sig = "\\dagger"
-        print_line(key, compare, sig)
+        print_line(key, compare, time, sig)
         
 def plot_evaluation_accuracy(outputs, network_outputs):
     str_f = "{:.6f}"
@@ -281,25 +359,71 @@ def plot_evaluation_accuracy(outputs, network_outputs):
     plt.rcParams.update({'font.size': 20})
     ax_list = []
     
-    for i, (key, value) in enumerate(outputs.items()):
+    for i, (key, (value, _)) in enumerate(outputs.items()):
         ax = fig.add_subplot(1,len(outputs),i+1)
         ax_list.append(ax)
         ax.set_title(key)
-        ax.set_xlabel("Deep Learning")
+        ax.set_xlabel("Decision Model")
         if i == 1:
-            ax.set_ylabel("Optimal reward [arb.u.]") 
-        bins = torch.logspace(torch.log10(torch.tensor(5e-5)), torch.log10(torch.tensor(1e-1)), 50)
-        hist = ax.hist2d(network_outputs.mean(1).cpu(), value.mean(2).cpu()[:,-1], bins = bins.cpu(), vmin = 0, vmax = 25, cmap='hot')
-        ax.plot([1e-1, 1e-5], [1e-1, 1e-5], 'tab:cyan')
+            ax.set_ylabel("Optimal reward [arb.u.]")
+        lower_limit = 0.03 #2e-1
+        upper_limit = 9e-3
+        bins = torch.logspace(torch.log10(torch.tensor(upper_limit)), torch.log10(torch.tensor(lower_limit)), 50)
+        hist = ax.hist2d(network_outputs[0].mean(1).cpu(), value.mean(2).cpu()[:,-1], bins = bins.cpu(), vmin = 0, vmax = 25, cmap='hot')
+        ax.plot([lower_limit, upper_limit], [lower_limit, upper_limit], 'tab:cyan')
         if i+1 != 1:
             ax.axes.get_yaxis().set_visible(False)
-        ax.set_xscale('symlog', linthresh = 1e-6, subs = range(2,10))
-        ax.set_xlim((1e-1,5e-5,))
-        ax.set_yscale('symlog', linthresh = 1e-6, subs = range(2,10))
-        ax.set_ylim((1e-1,5e-5,))
+        ax.set_xscale('symlog')
+        ax.set_xlim((lower_limit,upper_limit,))
+        ax.set_yscale('symlog')
+        ax.set_ylim((lower_limit,upper_limit,))
     fig.colorbar(hist[3], ax=ax_list, label="Count [#]")
     plt.savefig('outputs/linear_int_rew_comp.pdf',dpi=300, bbox_inches = "tight")
 
+def plot_comparison_scatter(outputs, network_outputs):
+    keys = []
+    times = []
+    mses = []
+
+    # Baseline: Deep Learning model
+    dl_mse = network_outputs[0].mean(1)
+    dl_time = network_outputs[1].mean()
+    keys.append("Decision Model")
+    times.append(dl_time.item())
+    mses.append(dl_mse.mean().item())
+
+    # Others
+    for key, (value, time) in outputs.items():
+        compare = value.mean(2).min(dim=1).values
+        mean_mse = compare.mean().item()
+        mean_time = time.mean().item()
+        keys.append(key)
+        times.append(mean_time)
+        mses.append(mean_mse)
+
+    # Compute axis limits with +10% padding
+    time_min, time_max = min(times), max(times)
+    mse_min, mse_max = min(mses), max(mses)
+
+    time_padding = 0.1 * (time_max - time_min) if time_max > time_min else 0.1
+    mse_padding = 0.1 * (mse_max - mse_min) if mse_max > mse_min else 0.1
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.scatter(times, mses, s=80)
+
+    for i, label in enumerate(keys):
+        plt.annotate(label, (times[i], mses[i]), textcoords="offset points", xytext=(5, 5), ha='left')
+
+    plt.xlim(time_min - time_padding, time_max + time_padding*5)
+    plt.ylim(mse_min - mse_padding, mse_max + mse_padding)
+
+    plt.xlabel("Mean Evaluation Time [s]")
+    plt.ylabel("MSE")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig('outputs/comparison_scatter.pdf',dpi=300, bbox_inches = "tight")
+    
 def plot_attribute(model, attribute_index = 5):
     ds = RandomIterableDataset(500000, 8, 10000000, model.device)
     z = torch.stack([element for element in ds]).reshape(500, -1, 8)
@@ -387,6 +511,7 @@ def load_model_critic_net(device, path='ehu98hh8'):
 def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     outputs_list = []
     network_outputs_list = []
+    network_times_list = []
     model, critic_net = load_model_critic_net(device)
     ds = RandomIterableDataset(repetitions, 8, 10000000, device)
 
@@ -394,25 +519,39 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
 
     for state in tqdm(ds, total=repetitions):
         state = state.unsqueeze(0)
+
+        if state.device.type == "cuda":
+            warmup_gpu(state.device)
+    
+        if state.device.type == "cuda":
+            torch.cuda.synchronize()
+        start_time = time.time()
+    
         with torch.no_grad():
             policy_action = model(state)
+
+        if state.device.type == "cuda":
+            torch.cuda.synchronize()
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+            
         network_outputs_list.append(critic_net(policy_action, state))
+        network_times_list.append(elapsed_time)
+        
         outputs = {
-            "Powell's Method": eval_scipy("Powell", state, niter),
+            "Powell’s Method": eval_scipy("Powell", state, niter),
             "Simulated Annealing": eval_scipy_annealing(state, niter),
-            #"SGD": eval_torch_sgd(state.cpu(), niter),
-            #"TPE": eval_optuna(state, niter),
+            "SGD": eval_torch_sgd(state.cpu(), niter),
+            "TPE": eval_optuna(state, niter),
             "GA_200": eval_evotorch_GA(state, niter, popsize=200),
             "GA_500": eval_evotorch_GA(state, niter, popsize=500),
             #"SNES": eval_evotorch_single(state, niter),
         }
         outputs_list.append(outputs)
-        
     outputs = {}
     for key in outputs_list[0]:
-        outputs[key] = torch.stack([entry[key] for entry in outputs_list], dim=0)
-    
-    network_outputs = torch.stack(network_outputs_list).squeeze(1)
+        outputs[key] = torch.stack([entry[key][0] for entry in outputs_list], dim=0), torch.tensor([entry[key][1] for entry in outputs_list], device=device)
+    network_outputs = torch.stack(network_outputs_list).squeeze(1), torch.tensor(network_times_list, device=device)
 
     with open("outputs/eval_dict.pkl", "wb") as f:
         pickle.dump(outputs, f)
@@ -420,12 +559,12 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     with open("outputs/network_eval_dict.pkl", "wb") as f:
         pickle.dump(network_outputs, f)
 
-    return outputs, network_outputs, model
+    return outputs, network_outputs, model, critic_net
 
 if __name__ == "__main__":
-    outputs, network_outputs, model = evaluation(niter=50)
+    outputs, network_outputs, model, critic_net = evaluation(repetitions=1000, niter=50)
     
-    plot_time_comparison(outputs, network_outputs.mean().item())
+    plot_time_comparison(outputs, network_outputs)
 
     plot_evaluation_accuracy(outputs, network_outputs)
 
@@ -434,6 +573,10 @@ if __name__ == "__main__":
     print_comparison_table(outputs, network_outputs)
 
     jac_std_avg(model)
+
+    benchmark_model(critic_net.model, 14)
+
+    benchmark_model(critic_net.model, 14, samples=100000)
 
     plot_attribute(model)
 
