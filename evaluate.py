@@ -226,17 +226,17 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
     elapsed_time = end_time - start_time
     return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time
 
-def eval_torch_sgd(state, niter, device=torch.device('cpu'), initial_action=None):
+def eval_torch_sgd(state, niter, initial_action=None):
     if state.device.type == "cuda":
         warmup_gpu(state.device)
 
     if state.device.type == "cuda":
         torch.cuda.synchronize()
     start_time = time.time()
-    state = state.to(device)
-    critic_net = Critic(device=device)
+
+    critic_net = Critic(device=state.device)
     if initial_action is None:
-        initial_action = torch.rand((1, 4), device=device, requires_grad=True)  # Needs grad to be optimized
+        initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)  # Needs grad to be optimized
     else:
         initial_action = initial_action.clone().detach().requires_grad_(True)
     lr = 0.1
@@ -306,7 +306,7 @@ def plot_time_comparison(outputs, network_outputs):
 
     mean = network_outputs[0].mean()
     std = network_outputs[0].mean(dim=1).std()
-    ax.plot(range(l), [mean.cpu() for i in range(l)], label="Decision Model", color=clrs[0], linestyle=(0, (5, 1)))
+    ax.plot(range(l), [mean.cpu() for i in range(l)], label="Decision Model", color=clrs[0], linestyle=(0, (5, 1)), zorder=4)
     ax.fill_between(range(l), (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[0])
     ax.scatter([0], mean.cpu(), color=clrs[0], s=100, zorder=5)
     
@@ -337,20 +337,57 @@ def print_time_to_match(outputs, network_outputs):
         print(key, "& $", matching_bool_sum.sum().item(),'/',len(compare), "$ &", f"${iterations_until_matched.float().mean().item():.2f}" , '\\pm', f"{iterations_until_matched.float().std().item():.2f}$ \\\\")
 
 def print_comparison_table(outputs, network_outputs):
-    def print_line(key, tensor, time, sig=''):
-        mean = f"${tensor.mean():.4f}"#.replace("e-0", "e-").replace("e+0", "e+")
-        std = f"{tensor.std():.4f}"#.replace("e-0", "e-").replace("e+0", "e+")
-        print(key, "&", f"{mean}\\pm{std}", sig, "$ &", f"${time.mean():.4f}$ \\\\")
-    
-    print_line('Decision Model', network_outputs[0].mean(1), network_outputs[1].mean())
-    
+    def format_value(val, min_val):
+        s = f"{val:.6f}"
+        return f"\\mathbf{{{s}}}" if val == min_val else s
+
+    def print_line(key, tensor, time, metric_sig=False, time_sig=False, min_mean=None, min_time=None):
+        mean_val = tensor.mean().item()
+        std_val = tensor.std().item()
+        time_mean = time.mean().item()
+        time_std = time.std().item()
+
+        mean_str = format_value(mean_val, min_mean)
+        time_str = format_value(time_mean, min_time)
+
+        # Add significance markers
+        metric_dagger = "\\dagger" if metric_sig else ""
+        time_dagger = "\\dagger" if time_sig else ""
+        print(f"{key} & ${mean_str}\\pm{std_val:.4f}{metric_dagger}$ & ${time_str}\\pm{time_std:.4f}{time_dagger}$ \\\\")
+
+    # Extract decision model data
+    decision_tensor = network_outputs[0].mean(1)
+    decision_time = network_outputs[1]
+
+    # Store means for bolding
+    metric_means = [decision_tensor.mean().item()]
+    time_means = [decision_time.mean().item()]
+
     for key, (value, time) in outputs.items():
         compare = value.mean(2).min(dim=1).values
-        sig = ''
-        result = ttest_rel(network_outputs[0].mean(1).cpu(), compare.cpu()).pvalue
-        if (result<=0.99):
-            sig = "\\dagger"
-        print_line(key, compare, time, sig)
+        metric_means.append(compare.mean().item())
+        time_means.append(time.mean().item())
+
+    min_metric_mean = min(metric_means)
+    min_time_mean = min(time_means)
+
+    # Print Decision Model (no significance comparison needed)
+    print_line('Decision Model', decision_tensor, decision_time, min_mean=min_metric_mean, min_time=min_time_mean)
+
+    # Print comparisons
+    for key, (value, time) in outputs.items():
+        compare = value.mean(2).min(dim=1).values
+
+        # Significance tests
+        metric_p = ttest_rel(decision_tensor.cpu(), compare.cpu()).pvalue
+        time_p = ttest_rel(decision_time.cpu(), time.cpu()).pvalue
+
+        metric_sig = metric_p <= 0.01
+        time_sig = time_p <= 0.01
+
+        print_line(key, compare, time, metric_sig=metric_sig, time_sig=time_sig, min_mean=min_metric_mean, min_time=min_time_mean)
+
+
         
 def plot_evaluation_accuracy(outputs, network_outputs):
     str_f = "{:.6f}"
@@ -384,6 +421,7 @@ def plot_comparison_scatter(outputs, network_outputs):
     keys = []
     times = []
     mses = []
+    fontsize=13
 
     # Baseline: Deep Learning model
     dl_mse = network_outputs[0].mean(1)
@@ -409,24 +447,27 @@ def plot_comparison_scatter(outputs, network_outputs):
     mse_padding = 0.1 * (mse_max - mse_min) if mse_max > mse_min else 0.1
 
     # Plot
-    plt.figure(figsize=(10, 6))
-    plt.scatter(times, mses, s=80)
+    plt.figure(figsize=(8, 4.7))
+    plt.scatter(times, mses, s=50)
 
     for i, label in enumerate(keys):
-        plt.annotate(label, (times[i], mses[i]), textcoords="offset points", xytext=(5, 5), ha='left')
+        plt.annotate(label.replace(' ', '\n'), (times[i], mses[i]), textcoords="offset points", xytext=(5, 5), ha='left', fontsize=fontsize)
 
-    plt.xlim(time_min - time_padding, time_max + time_padding*5)
-    plt.ylim(mse_min - mse_padding, mse_max + mse_padding)
+    plt.xlim(time_min - time_padding, time_max + time_padding*2)
+    plt.ylim(mse_min - mse_padding, mse_max + mse_padding*1.9)
 
-    plt.xlabel("Mean Evaluation Time [s]")
-    plt.ylabel("MSE")
+    plt.xlabel("Mean Evaluation Time [s]", fontsize=fontsize)
+    plt.gcf().text(0.223, 0.045, r"$\leftarrow$ Lower is better", ha='center', c="dimgray", fontsize=fontsize)
+    plt.ylabel(r"Mean $\mathcal{L}_l$", fontsize=fontsize)
+    plt.gcf().text(0.02, 0.28, r"$\leftarrow$ Lower is better", va='center', rotation=90, c="dimgray", fontsize=fontsize)
+    plt.tick_params(axis='both', labelsize=fontsize)
     plt.grid(True)
     plt.tight_layout()
     plt.savefig('outputs/comparison_scatter.pdf',dpi=300, bbox_inches = "tight")
     
 def plot_attribute(model, attribute_index = 5):
     ds = RandomIterableDataset(500000, 8, 10000000, model.device)
-    z = torch.stack([element for element in ds]).reshape(500, -1, 8)
+    z = torch.stack([element for element in ds]).reshape(500, 5, 5)
     
     
     attribute_index = 5
@@ -541,11 +582,10 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
         outputs = {
             "Powell’s Method": eval_scipy("Powell", state, niter),
             "Simulated Annealing": eval_scipy_annealing(state, niter),
-            "SGD": eval_torch_sgd(state.cpu(), niter),
+            "Gradient Descent": eval_torch_sgd(state, niter),
             "TPE": eval_optuna(state, niter),
-            "GA_200": eval_evotorch_GA(state, niter, popsize=200),
-            "GA_500": eval_evotorch_GA(state, niter, popsize=500),
-            #"SNES": eval_evotorch_single(state, niter),
+            "$\\text{GA}_{200}$": eval_evotorch_GA(state, niter, popsize=200),
+            "$\\text{GA}_{500}$": eval_evotorch_GA(state, niter, popsize=500),
         }
         outputs_list.append(outputs)
     outputs = {}
@@ -567,6 +607,8 @@ if __name__ == "__main__":
     plot_time_comparison(outputs, network_outputs)
 
     plot_evaluation_accuracy(outputs, network_outputs)
+    
+    plot_comparison_scatter(outputs, network_outputs)
 
     print_time_to_match(outputs, network_outputs)
 
