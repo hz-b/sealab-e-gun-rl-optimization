@@ -111,7 +111,7 @@ def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over
     elapsed_time = end_time - start_time
     return output[torch.arange(niter), best_indices], elapsed_time
 
-def eval_evotorch_GA(state, niter, popsize=500, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
+def eval_evotorch_GA(state, niter, popsize=200, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
     if state.device.type == "cuda":
         warmup_gpu(state.device)
 
@@ -226,6 +226,76 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
     elapsed_time = end_time - start_time
     return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time
 
+from tqdm import trange
+
+def eval_sa(
+    model,
+    observed_rays,
+    uncompensated_parameters,
+    steps=1000,
+    step_size=0.1,
+    T_start=1.0,
+    T_end=1e-3,
+    cooling_schedule='exp',
+    verbose=False
+):
+    device = model.device
+    dim = uncompensated_parameters.shape[-1]
+
+    def energy_fn(offsets):
+        # Clamp to [0, 1] since offsets are unscaled
+        offsets = offsets.clamp(0.0, 1.0)
+        scaled_offsets = model.rescale_offset(offsets)
+        compensated_rays = model(uncompensated_parameters + scaled_offsets)
+        loss = ((compensated_rays - observed_rays) ** 2).mean().to(device)
+        return loss
+
+    # Initialize with uniform random [0, 1]
+    x = torch.rand(dim, device=device)
+    x.requires_grad = False
+
+    best_x = x.clone()
+    current_energy = energy_fn(x)
+    best_energy = current_energy.clone()
+
+    best_losses = [best_energy.item()]  # Track best loss over time
+
+    def temperature(t):
+        if cooling_schedule == 'exp':
+            return T_start * (T_end / T_start) ** (t / steps)
+        elif cooling_schedule == 'linear':
+            return T_start - t * (T_start - T_end) / steps
+        else:
+            raise ValueError("Unknown cooling schedule")
+
+    for t in trange(steps, disable=not verbose):
+        T = temperature(t)
+
+        # Propose new candidate
+        perturbation = torch.randn_like(x) * step_size
+        x_new = (x + perturbation).clamp(0.0, 1.0)
+        energy_new = energy_fn(x_new)
+
+        delta_E = energy_new - current_energy
+        accept_prob = torch.exp(-delta_E / T).clamp(max=1.0)
+        rand_val = torch.rand(1, device=device)
+
+        if delta_E < 0 or rand_val < accept_prob:
+            x = x_new
+            current_energy = energy_new
+            if energy_new < best_energy:
+                best_energy = energy_new
+                best_x = x_new.clone()
+
+        best_losses.append(best_energy.item())
+
+        if verbose and t % max(1, (steps // 10)) == 0:
+            print(f"Step {t}, Energy: {energy_new.item():.4f}, Best: {best_energy.item():.4f}, Temp: {T:.4f}")
+
+    final_params = model.rescale_offset(best_x.clamp(0.0, 1.0)) + uncompensated_parameters
+    return final_params.squeeze(-2), best_energy.item(), best_losses
+
+
 def eval_torch_sgd(state, niter, initial_action=None):
     if state.device.type == "cuda":
         warmup_gpu(state.device)
@@ -265,6 +335,10 @@ def warmup_gpu(device):
     torch.cuda.synchronize()
 
 def benchmark_model(model, input_count=4, samples=1):
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"Using GPU: {gpu_name}")
+    
     # Set model to eval mode and move to device
     if isinstance(model, nn.Module):
         model.eval()
@@ -466,11 +540,10 @@ def plot_comparison_scatter(outputs, network_outputs):
     plt.savefig('outputs/comparison_scatter.pdf',dpi=300, bbox_inches = "tight")
     
 def plot_attribute(model, attribute_index = 5):
-    ds = RandomIterableDataset(500000, 8, 10000000, model.device)
-    z = torch.stack([element for element in ds]).reshape(500, 5, 5)
-    
-    
-    attribute_index = 5
+    ds = RandomIterableDataset(100000, 8, 10000000, model.device)
+    z = torch.stack([element for element in ds]).reshape(500, -1, 8)
+     
+    attribute_index = attribute_index
     l = torch.linspace(0.,1., z.shape[0], device=model.device)
     
     # replace all random values from attribute_index with linspace
@@ -488,10 +561,13 @@ def plot_attribute(model, attribute_index = 5):
         mean = sub_y.mean(dim = 1)
         ax.plot(l.cpu(), mean, label = get_labels('action')[i], c=clrs[i])
         ax.fill_between(l.cpu(), mean-var, mean+var,alpha=0.25, facecolor=clrs[i])
-    plt.legend()
+    ax.tick_params(axis='both', which='major', labelsize=14)
+    plt.legend(fontsize=14)
     plt.xlabel(get_labels('obs')[attribute_index]+ " [normalized]", fontsize=20)
-    plt.ylabel("Policy action value [normalized]", fontsize=20)
-    plt.savefig("outputs/"+get_labels('obs')[attribute_index] + str(ds.stddev) + '.pdf')
+    plt.ylabel("Action value [normalized]", fontsize=20)
+    label = get_labels('obs')[attribute_index].replace(" ", "_")
+    std_str = str(ds.stddev).replace(".", "_")
+    plt.savefig(f"outputs/{label}{std_str}.pdf")
 
 def get_labels(category:str):
     labels = ['Laser pulse length', 'Laser spot size', 'Gun peak field', 'Gun DC bias field', 'Field flatness', 'Laser horizontal position', 'Laser vertical position', 'Solenoid horizontal position', 'Solenoid vertical position', 'Solenoid angle y-axis', 'Solenoid angle x-axis', 'Emission phase', 'Solenoid strength', 'Cathode position', 'Average horizontal beam size', 'Average vertical beam size', 'Horizontal beam position', 'Vertical beam position', 'Average beam momentum']
@@ -584,8 +660,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
             "Simulated Annealing": eval_scipy_annealing(state, niter),
             "Gradient Descent": eval_torch_sgd(state, niter),
             "TPE": eval_optuna(state, niter),
-            "$\\text{GA}_{200}$": eval_evotorch_GA(state, niter, popsize=200),
-            "$\\text{GA}_{500}$": eval_evotorch_GA(state, niter, popsize=500),
+            "GA": eval_evotorch_GA(state, niter)
         }
         outputs_list.append(outputs)
     outputs = {}
