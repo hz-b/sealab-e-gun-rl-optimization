@@ -10,7 +10,6 @@ class Critic:
 
         self.output_min = torch.tensor([5.5178498e-05,  4.9179042e-05, -2.9998908e-02, -2.2358654e-01, 2.3033355e+05], device=self.model.device)
         self.output_max = torch.tensor([2.9990217e-02, 2.9933929e-02, 2.9999450e-02, 2.9999496e-02, 2.5222615e+06], device=self.model.device)
-        self.epsilon = 5e-5
 
         # Precompute the phase/solenoid grid
         self.N = grid_resolution
@@ -22,12 +21,11 @@ class Critic:
 
     def calculate_reward(self, output_array, norm=torch.abs):
         output_inv = (self.output_max - self.output_min)*output_array + self.output_min  
-        sizes = output_inv[:,0] - output_inv[:,1]
-        sizes_min = self.output_min[0]-self.output_max[1]
-        sizes_max = self.output_max[0]-self.output_min[1]
-        sizes_inv = (sizes_max - sizes_min)*sizes + sizes_min
-
-        value = torch.vstack([norm(output_inv[:,2]), norm(output_inv[:,3]), norm(sizes_inv)]).T
+        diff = norm(output_inv[:,0] - output_inv[:,1])
+        diff_min = 0.0
+        diff_max = max(norm(self.output_max[0] - self.output_min[1]), norm(self.output_min[0]-self.output_max[1]))
+        normalized = (diff - diff_min) / (diff_max - diff_min)
+        value = torch.vstack([norm(output_array[:,2]), norm(output_array[:,3]), normalized]).T
         return value
 
     def compute_integrated_reward(self, expanded_actions, expanded_states, norm=torch.abs, penalize_forbidden_actions=False):
