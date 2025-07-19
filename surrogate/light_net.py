@@ -4,9 +4,10 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import h5py
 import os
+import wandb
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
+from lightning.pytorch.loggers import WandbLogger
 from argparse import ArgumentParser
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -15,13 +16,20 @@ import matplotlib.pyplot as plt
 
 class MinMaxDataset(Dataset):
     def __init__(self, x, y):
-        self.max = np.amax(x.T, axis=1)
-        self.min = np.amin(x.T, axis=1)
+
+        # Compute min, max, and range for features
+        self.min = torch.min(self.x, dim=0).values
+        self.max = torch.max(self.x, dim=0).values
         self.z = self.max - self.min
 
-        self.maxY = np.amax(self.y.T, axis=1)
-        self.minY = np.amin(self.y.T, axis=1)
+        # Compute min, max, and range for targets
+        self.minY = torch.min(self.y, dim=0).values
+        self.maxY = torch.max(self.y, dim=0).values
         self.zY = self.maxY - self.minY
+
+        # Apply normalization
+        self.x_norm = self.z_score(self.x)
+        self.y_norm = self.z_score_y(self.y)
 
     def z_score(self, x):
         return (x - self.min) / self.z
@@ -34,6 +42,12 @@ class MinMaxDataset(Dataset):
 
     def un_z_score_y(self, y):
         return y * self.zY + self.minY
+
+    def __len__(self):
+        return len(self.x_norm)
+
+    def __getitem__(self, idx):
+        return self.x_norm[idx], self.y_norm[idx]
 
 class ZScoreDataset(Dataset):
     def __init__(self, x, y):
@@ -53,26 +67,9 @@ class ZScoreDataset(Dataset):
 
     def un_z_score_y(self, y):
         return y * self.yStd + self.yMean
-        
-class MultiDataset(ZScoreDataset):
-    def __init__(self, dataset1, dataset2):
-        self.dataset1 = dataset1
-        self.dataset2 = dataset2
-
-        self.x = self.dataset1[:][0].numpy()
-        self.y = self.dataset1[:][1].numpy()
-        super().__init__(self.x, self.y)
-        
-    def __getitem__(self, idx):
-        if(idx >= len(self.dataset1)):
-            return self.dataset2[idx-len(self.dataset1)]
-        else:
-            return self.dataset1[idx]
-    def __len__(self):
-        return len(self.dataset1)+len(self.dataset2)
 
 class H5Dataset(MinMaxDataset):
-    def __init__(self, path, transform=None, target_transform=None):
+    def __init__(self, path, transform=None, target_transform=None, omit_outliers=False, outlier_replacement=[100., 1000., 100., 100., 100.]):
         self.transform = transform
         self.target_transform = target_transform
         self.data = h5py.File(path,'r')
@@ -83,37 +80,46 @@ class H5Dataset(MinMaxDataset):
         self.y = self.data['Y'][:5].T
         
         self.data.close()
-                
-        mask = (abs(self.y.T[0][:]) < 0.03) & (abs(self.y.T[1][:]) < 0.03) & (abs(self.y.T[2][:]) < 0.03) & (abs(self.y.T[3][:] < 0.03))
-        self.x = self.x[mask]
-        self.y = self.y[mask]
+        
+        self.x = torch.from_numpy(self.x).float()
+        self.y = torch.from_numpy(self.y).float()
+
+        mask = (abs(self.y.T[0][:]) < 0.03) & (abs(self.y.T[1][:]) < 0.03) & (abs(self.y.T[2][:]) < 0.03) & (abs(self.y.T[3][:]) < 0.03)
+        
+        if omit_outliers:
+            self.x = self.x[mask]
+            self.y = self.y[mask]
+        else:
+            self.y[~mask] = torch.tensor(outlier_replacement, device=self.x.device).repeat(self.y[~mask].shape[0], 1)
+        
         super().__init__(self.x, self.y)
+        self.x = self.z_score(self.x)
+        self.y = self.z_score_y(self.y)
+        
 
     def __len__(self):
         return self.x.shape[0]
 
     def __getitem__(self, idx):
-        x = self.z_score(self.x[idx])
-        y = self.z_score_y(self.y[idx])
         if self.transform:
             x = self.transform(x)
         if self.target_transform:
             y = self.target_transform(y)
-        return torch.from_numpy(x).float(),torch.from_numpy(y).float()
+        return self.x[idx], self.y[idx]
 
 class BerlinPro2(pl.LightningModule):
     def __init__(self, hparams):
         super(BerlinPro2, self).__init__()
         self.save_hyperparameters(hparams)
         #self.hparams = hparams
+        os.makedirs(os.path.join(self.hparams.output_dir, self.hparams.name), exist_ok=True)
         self.net = self.create_sequential(14, 5, self.hparams.layer_size, blow=self.hparams.blow, shrink_factor=self.hparams.shrink_factor)
+        self.val_x = []
+        self.val_y = []
+        self.val_y_hat = []
         
     def prepare_data(self):
-        #self.dataset = H5Dataset(os.path.join(self.hparams.data_root,'CombineData_MLP_10-15_16(200)_17(200)_INF1-6.hdf5'))
-        #first_set = H5Dataset(os.path.join(self.hparams.data_root,'CombineData_MLP_10-15_16(200)_17(200)_INF1-6.hdf5'))
-        second_set = H5Dataset(os.path.join(self.hparams.data_root,'bbp_merged.hdf5'))
-        self.dataset = second_set
-        #self.dataset = MultiDataset(first_set, second_set)
+        self.dataset = H5Dataset(os.path.join(self.hparams.data_root,'bbp_merged.hdf5'))
 
         train_size = int(0.6 * len(self.dataset))
         val_size = int(0.2 * len(self.dataset))
@@ -162,31 +168,29 @@ class BerlinPro2(pl.LightningModule):
         x, y = batch
         y_hat = self.forward(x)
         loss = nn.MSELoss()(y, y_hat)
-        tensorboard_logs = {'train_loss': loss}
-        return {'loss': loss, 'log': tensorboard_logs}
+        self.log("train_loss", loss)
+        return loss
 
     def test_step(self, batch, batch_nb):
         x, y = batch
         y_hat = self.forward(x)
         test_loss = nn.MSELoss()(y_hat, y)
-        return {'s_test_loss': test_loss}
-
-    def test_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['s_test_loss'] for x in outputs]).mean()
-        tensorboard_logs = {'test_loss': avg_loss}
-        return {'test_loss': avg_loss, 'log': tensorboard_logs}
+        self.log("test_loss", test_loss)
 
     def validation_step(self, batch, batch_nb):
         x, y = batch
         y_hat = self.forward(x)
         val_loss = nn.MSELoss()(y_hat, y)
-        return {'s_val_loss': val_loss, 'y': y, 'y_hat': y_hat, 'x': x}
+        self.log("val_loss", val_loss)
+        self.val_x.append(x)
+        self.val_y.append(y)
+        self.val_y_hat.append(y_hat)
 
-    def validation_epoch_end(self, outputs):
-        val_loss = torch.stack([x['s_val_loss'] for x in outputs]).mean()
-
-        y = torch.cat([x['y'] for x in outputs])
-        y_hat = torch.cat([x['y_hat'] for x in outputs])
+    def on_validation_epoch_end(self):
+        x = torch.cat([i for i in self.val_x])
+        y = torch.cat([i for i in self.val_y])
+        y_hat = torch.cat([i for i in self.val_y_hat])
+        
         output = {}
         plot_data_count = 1000
         for i in range(y.shape[1]):
@@ -196,19 +200,25 @@ class BerlinPro2(pl.LightningModule):
         y_data = self.dataset.un_z_score_y(y[:plot_data_count].cpu())
         y_hat_data = self.dataset.un_z_score_y(y_hat[:plot_data_count].cpu())
         for i in range(y.shape[1]):
-            joint = sns.jointplot(y_data[:,i], y_hat_data[:,i], kind='scatter').set_axis_labels("real", "predicted")
-            joint.ax_joint.plot([y_data[:,i].min(), y_data[:,i].max()], [y_data[:,i].min(), y_data[:,i].max()], color="r")
-            #self.logger.experiment.add_figure("jointplot"+str(i+1),joint.fig)
+            mask = y_data[:,i] < 0.03
+            if (~mask).all():
+                continue
+            joint = sns.jointplot(x=y_data[:,i][mask], y=y_hat_data[:,i][mask], kind='scatter').set_axis_labels("real", "predicted")
+            joint.ax_joint.set_ylim(bottom=y_data[:, i][mask].min(), top=y_data[:, i][mask].max())
+            joint.ax_joint.plot([y_data[:,i][mask].min(), y_data[:,i][mask].max()], [y_data[:,i][mask].min(), y_data[:,i][mask].max()], color="r")
             plt.tight_layout()
-            plt.savefig('lightning_logs/'+self.hparams.name+'/jointplot_'+str(i+1)+'.pdf')
+            plt.savefig('outputs/'+self.hparams.name+'/jointplot_'+str(i+1)+'.pdf')
+            wandb.log({"good_"+str(i): wandb.Image(joint.fig)})
+            joint.fig.clf()
             plt.close(joint.fig)
-            errorplot = sns.jointplot(y_data[:,i], y_data[:,i]-y_hat_data[:,i], color="g").fig
-            #self.logger.experiment.add_figure("errorplot"+str(i+1),errorplot)
+            errorplot = sns.jointplot(x=y_data[:,i][mask], y=y_data[:,i][mask]-y_hat_data[:,i][mask], color="g").fig
             plt.tight_layout()
-            plt.savefig('lightning_logs/'+self.hparams.name+'/line_plot_'+str(i+1)+'.pdf')
+            plt.savefig('outputs/'+self.hparams.name+'/line_plot_'+str(i+1)+'.pdf')
             plt.close(errorplot)
-        output['val_loss'] = val_loss
-        return {'val_loss':val_loss,'log':output}
+
+        self.val_x.clear()
+        self.val_y.clear()
+        self.val_y_hat.clear()
 
     def configure_optimizers(self):
         if self.hparams.optimizer == 'adam':
@@ -246,7 +256,8 @@ class BerlinPro2(pl.LightningModule):
         parser.add_argument('--learning_rate', default=0.001, type=float)
 
         # data
-        parser.add_argument('--data_root', default='/mnt/work/xfel/bessy/berlinPro', type=str)
+        parser.add_argument('--data_root', default='../datasets', type=str)
+        parser.add_argument('--output_dir', default='outputs', type=str)
 
         # training params (opt)
         parser.add_argument('--batch_size', default=2048, type=int)
@@ -262,11 +273,8 @@ if __name__ == '__main__':
     
     print(model.net)
     
-    logger = TensorBoardLogger(
-        save_dir=os.getcwd(),
-        version=model.hparams.name,
-        name='lightning_logs'
-    )
-    trainer = pl.Trainer(fast_dev_run=False, limit_train_batches=1.0, limit_val_batches=1.0, num_nodes=1, gpus=model.hparams.gpus, logger=logger, early_stop_callback=False, precision=32)
+    logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=model.hparams.output_dir)
+    
+    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=10, max_epochs=1000, num_nodes=1, logger=logger, precision=32)
     trainer.fit(model)
     trainer.test()
