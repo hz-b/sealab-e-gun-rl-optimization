@@ -11,6 +11,7 @@ class Critic:
         self.output_min = torch.tensor([5.5178498e-05,  4.9179042e-05, -2.9998908e-02, -2.2358654e-01, 2.3033355e+05], device=self.model.device)
         self.output_max = torch.tensor([2.9990217e-02, 2.9933929e-02, 2.9999450e-02, 2.9999496e-02, 2.5222615e+06], device=self.model.device)
 
+        
         # Precompute the phase/solenoid grid
         self.N = grid_resolution
         grid_phase = torch.linspace(0., 0.9, self.N, device=self.model.device)
@@ -19,14 +20,27 @@ class Critic:
         self.grid_phase_flat = mesh_phase.reshape(-1, 1)        # (N^2, 1)
         self.grid_solenoid_flat = mesh_solenoid.reshape(-1, 1)  # (N^2, 1)
 
+    def minmax_diff(self, norm):
+        diff_min = 0.0
+        diff_max = max(norm(self.output_max[0] - self.output_min[1]), norm(self.output_min[0]-self.output_max[1]))
+        return diff_min, diff_max
+        
     def calculate_reward(self, output_array, norm=torch.abs):
         output_inv = (self.output_max - self.output_min)*output_array + self.output_min  
         diff = norm(output_inv[:,0] - output_inv[:,1])
-        diff_min = 0.0
-        diff_max = max(norm(self.output_max[0] - self.output_min[1]), norm(self.output_min[0]-self.output_max[1]))
+        
+        diff_min, diff_max = self.minmax_diff(norm=norm)
+        
         normalized = (diff - diff_min) / (diff_max - diff_min)
         value = torch.vstack([norm(output_array[:,2]), norm(output_array[:,3]), normalized]).T
         return value
+
+    def denormalize_reward(self, reward, norm=torch.abs):
+        diff_min, diff_max = self.minmax_diff(norm=norm)
+        mins = torch.tensor([self.output_min[2].item(), self.output_min[3].item(), diff_min], device=reward.device)
+        maxs = torch.tensor([self.output_max[2].item(), self.output_max[3].item(), diff_max], device=reward.device)
+        
+        return (maxs - mins) * reward + mins
 
     def compute_integrated_reward(self, expanded_actions, expanded_states, norm=torch.abs, penalize_forbidden_actions=False):
         merged_input = torch.cat([expanded_states[:, :7], expanded_actions, expanded_states[:, -3:]], dim=1)
