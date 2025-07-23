@@ -388,7 +388,7 @@ def benchmark_model(model, input_count=4, samples=1):
     print(result)  # Automatically shows time per run and other stats
 
 
-def plot_time_comparison(outputs, network_outputs, real_time=False):
+def plot_time_comparison(outputs, network_outputs=None, real_time=False):
     clrs = list(plt.cm.tab10.colors)
     clrs[3], clrs[0] = clrs[0], clrs[3]
     clrs[-1], clrs[2] = clrs[2], clrs[-1]
@@ -402,13 +402,11 @@ def plot_time_comparison(outputs, network_outputs, real_time=False):
         x_string = "Evaluation count [#]"
     ax.set_xlabel(x_string, fontsize=fontsize)
     ax.set_ylabel("Mean $\\mathcal{L}_l$", fontsize=fontsize)
+    ax.set_yscale('log')
     ax.tick_params(axis='x', labelsize=fontsize_small)
     ax.tick_params(axis='y', labelsize=fontsize_small)
     
     l = outputs[next(iter(outputs))][0].shape[1]  # number of steps
-
-    mean = network_outputs[0].mean()
-    std = network_outputs[0].mean(dim=1).std()
 
     if real_time:
         max_time = 0.
@@ -418,9 +416,13 @@ def plot_time_comparison(outputs, network_outputs, real_time=False):
     else:
         x = range(l)
 
-    ax.plot(x, [mean.cpu() for i in x], label="Decision Model", color=clrs[0], linestyle=(0, (5, 1)), zorder=4)
-    ax.fill_between(x, (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[0])
-    ax.scatter([0], mean.cpu(), color=clrs[0], s=100, zorder=5)
+    if network_outputs is not None:
+        mean = network_outputs[0].mean()
+        std = network_outputs[0].mean(dim=1).std()
+        
+        ax.plot(x, [mean.cpu() for i in x], label="Decision Model", color=clrs[0], linestyle=(0, (5, 1)), zorder=4)
+        ax.fill_between(x, (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[0])
+        ax.scatter([0], mean.cpu(), color=clrs[0], s=100, zorder=5)
     
     
     for i, (key, (value, _, time_vector)) in enumerate(outputs.items()):
@@ -473,13 +475,16 @@ def print_comparison_table(outputs, network_outputs):
         time_dagger = "\\dagger" if time_sig else ""
         print(f"{key} & ${mean_str}\\pm{std_val:.4f}{metric_dagger}$ & ${time_str}\\pm{time_std:.4f}{time_dagger}$ \\\\")
 
+    metric_means = []
+    time_means = []
+    
     # Extract decision model data
     decision_tensor = network_outputs[0].mean(1)
     decision_time = network_outputs[1]
 
     # Store means for bolding
-    metric_means = [decision_tensor.mean().item()]
-    time_means = [decision_time.mean().item()]
+    metric_means.append(decision_tensor.mean().item())
+    time_means.append(decision_time.mean().item())
 
     for key, (value, time, _) in outputs.items():
         compare = value.mean(2).min(dim=1).values
@@ -535,18 +540,18 @@ def plot_evaluation_accuracy(outputs, network_outputs):
     fig.colorbar(hist[3], ax=ax_list, label="Count [#]")
     plt.savefig('outputs/linear_int_rew_comp.pdf',dpi=300, bbox_inches = "tight")
 
-def plot_comparison_scatter(outputs, network_outputs):
+def plot_comparison_scatter(outputs, network_outputs=None):
     keys = []
     times = []
     mses = []
     fontsize=13
-
-    # Baseline: Deep Learning model
-    dl_mse = network_outputs[0].mean(1)
-    dl_time = network_outputs[1].mean()
-    keys.append("Decision Model")
-    times.append(dl_time.item())
-    mses.append(dl_mse.mean().item())
+    if network_outputs is not None:
+        # Baseline: Deep Learning model
+        dl_mse = network_outputs[0].mean(1)
+        dl_time = network_outputs[1].mean()
+        keys.append("Decision Model")
+        times.append(dl_time.item())
+        mses.append(dl_mse.mean().item())
 
     # Others
     for key, (value, time, _) in outputs.items():
@@ -662,7 +667,7 @@ def jac_std_avg(model, stddev=.2):
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
-def load_model_critic_net(device, path='ehu98hh8'):
+def load_model_critic_net(device, path='1ckm9pg8'):
     critic_net = Critic(device=device)
     path = get_checkpoint_path(path)
     model = RandomModel.load_from_checkpoint(path, critic_net=critic_net,  map_location=device).to(device)
@@ -675,8 +680,6 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     network_times_list = []
     model, critic_net = load_model_critic_net(device)
     ds = RandomIterableDataset(repetitions, 8, 10000000, device)
-
-
 
     for state in tqdm(ds, total=repetitions):
         state = state.unsqueeze(0)
