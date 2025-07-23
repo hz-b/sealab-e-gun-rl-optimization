@@ -1,24 +1,33 @@
 import torch
-from surrogate.light_net import BerlinPro2
+import os
+from validity_classifier import ValidityClassifier
+from light_net import BerlinPro2, H5Dataset
 
 class Critic:
-    def __init__(self, checkpoint='surrogate/surrogate_model.ckpt', device=None, grid_resolution=20):
+    def __init__(self, checkpoint='surrogate/outputs/berlinpro_surrogate/owhfbx24/checkpoints/epoch=689-step=99360.ckpt', validity_classifier='berlinpro_validity/4kf4034f/checkpoints/epoch=49-step=18200.ckpt', device=None, grid_resolution=10):
         self.model = BerlinPro2.load_from_checkpoint(checkpoint, map_location=device)
         self.model.freeze()
+        self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
+        if self.validity_classifier is not None:
+            self.validity_classifier.freeze()
+            if device is not None:
+                self.validity_classifier = self.validity_classifier.to(device)
+            
         if device is not None:
             self.model = self.model.to(device)
-
-        self.output_min = torch.tensor([5.5178498e-05,  4.9179042e-05, -2.9998908e-02, -2.2358654e-01, 2.3033355e+05], device=self.model.device)
-        self.output_max = torch.tensor([2.9990217e-02, 2.9933929e-02, 2.9999450e-02, 2.9999496e-02, 2.5222615e+06], device=self.model.device)
-
         
         # Precompute the phase/solenoid grid
         self.N = grid_resolution
-        grid_phase = torch.linspace(0., 0.9, self.N, device=self.model.device)
+        grid_phase = torch.linspace(0.1, 0.9, self.N, device=self.model.device)
         grid_solenoid = torch.linspace(0.6, 0.9, self.N, device=self.model.device)
         mesh_phase, mesh_solenoid = torch.meshgrid(grid_phase, grid_solenoid, indexing='ij')
         self.grid_phase_flat = mesh_phase.reshape(-1, 1)        # (N^2, 1)
         self.grid_solenoid_flat = mesh_solenoid.reshape(-1, 1)  # (N^2, 1)
+        ds = H5Dataset(os.path.join('datasets','bbp_ds_10m_merged.h5')) #TODO temporary, change to light_net import dir
+        self.output_min = ds.minY.to(self.model.device) 
+        self.output_max = ds.maxY.to(self.model.device)
+        self.normalized_zero = -self.output_min / (self.output_max - self.output_min)
+   
 
     def minmax_diff(self, norm):
         diff_min = 0.0
@@ -32,18 +41,17 @@ class Critic:
         diff_min, diff_max = self.minmax_diff(norm=norm)
         
         normalized = (diff - diff_min) / (diff_max - diff_min)
-        value = torch.vstack([norm(output_array[:,2]), norm(output_array[:,3]), normalized]).T
+        value = torch.vstack([norm(output_array[:,2]-self.normalized_zero[2]), norm(output_array[:,3]-self.normalized_zero[3]), normalized]).T
         return value
 
     def denormalize_reward(self, reward, norm=torch.abs):
         diff_min, diff_max = self.minmax_diff(norm=norm)
         mins = torch.tensor([self.output_min[2].item(), self.output_min[3].item(), diff_min], device=reward.device)
         maxs = torch.tensor([self.output_max[2].item(), self.output_max[3].item(), diff_max], device=reward.device)
-        
-        return (maxs - mins) * reward + mins
+        return (maxs - mins) * reward
 
-    def compute_integrated_reward(self, expanded_actions, expanded_states, norm=torch.abs, penalize_forbidden_actions=False):
-        merged_input = torch.cat([expanded_states[:, :7], expanded_actions, expanded_states[:, -3:]], dim=1)
+    def compute_integrated_reward(self, expanded_actions, expanded_states, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False):
+        merged_input = torch.cat([expanded_states, expanded_actions], dim=1)
         output = self.model(merged_input)
         reward =  self.calculate_reward(output, norm=norm)
         if penalize_forbidden_actions:
@@ -53,6 +61,12 @@ class Critic:
             reward_copy[forbidden_actions_mask] = 1000.
             return reward_copy
 
+        if penalize_invalid:
+            validity_scores = self.validity_classifier(merged_input)
+            validity = ~(validity_scores > 0.5).squeeze(-1)
+            reward_copy = reward.clone()
+            reward_copy[~validity] = 1000.
+            return reward_copy
         return reward
 
     def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_forbidden_actions=False):
@@ -68,14 +82,12 @@ class Critic:
 
         # Process state
         state = state_batch.squeeze(1)  # (batch_size, 8)
-        base = state[:, :7]
-        base_tiled = base.repeat_interleave(N2, dim=0)
+        state_tiled = state.repeat_interleave(N2, dim=0)
 
         phase_repeated = self.grid_phase_flat.repeat(batch_size, 1)
         solenoid_repeated = self.grid_solenoid_flat.repeat(batch_size, 1)
-        param8 = state[:, 7].repeat_interleave(N2).unsqueeze(1)
 
-        expanded_states = torch.cat([base_tiled, phase_repeated, solenoid_repeated, param8], dim=1)
+        expanded_states = torch.cat([state_tiled, phase_repeated, solenoid_repeated], dim=1)
 
         # Process actions
         expanded_actions = action_batch.repeat_interleave(N2, dim=0)
