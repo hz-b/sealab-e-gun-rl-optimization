@@ -109,7 +109,6 @@ class BerlinPro2(pl.LightningModule):
         super(BerlinPro2, self).__init__()
         self.save_hyperparameters(hparams)
         #self.hparams = hparams
-        os.makedirs(os.path.join(self.hparams.output_dir, self.hparams.name), exist_ok=True)
         self.net = self.create_sequential(14, 5, self.hparams.layer_size, blow=self.hparams.blow, shrink_factor=self.hparams.shrink_factor)
         self.val_x = []
         self.val_y = []
@@ -208,13 +207,17 @@ class BerlinPro2(pl.LightningModule):
             ha='center', va='top'
             )
             plt.tight_layout()
-            plt.savefig('outputs/'+self.hparams.name+'/jointplot_'+str(i+1)+'.pdf')
+            path = os.path.join(self.logger.save_dir, self.logger.experiment.id)
+            os.makedirs(path, exist_ok=True)
+
+            plt.savefig(os.path.join(path, 'jointplot_'+str(i+1)+'.pdf'))
+            
             wandb.log({sim_Y_labels[i].replace(" ", "_").replace("/", "\\"): wandb.Image(joint.fig)})
             joint.fig.clf()
             plt.close(joint.fig)
             errorplot = sns.jointplot(x=y_data[:,i][mask], y=y_data[:,i][mask]-y_hat_data[:,i][mask], color="g").fig
             plt.tight_layout()
-            plt.savefig('outputs/'+self.hparams.name+'/line_plot_'+str(i+1)+'.pdf')
+            plt.savefig(os.path.join(path, 'line_plot_'+str(i+1)+'.pdf'))
             plt.close(errorplot)
 
         self.val_x.clear()
@@ -274,8 +277,8 @@ if __name__ == '__main__':
     
     print(model.net)
     
-    logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=model.hparams.output_dir)
-    
+    logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
+        
     trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=10, max_epochs=1000, num_nodes=1, logger=logger, precision=32)
     trainer.fit(model)
     trainer.test()

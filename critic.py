@@ -1,10 +1,10 @@
 import torch
 import os
 from validity_classifier import ValidityClassifier
-from light_net import BerlinPro2, H5Dataset
+from surrogate import BerlinPro2, H5Dataset
 
 class Critic:
-    def __init__(self, checkpoint='surrogate/outputs/berlinpro_surrogate/owhfbx24/checkpoints/epoch=689-step=99360.ckpt', validity_classifier='berlinpro_validity/4kf4034f/checkpoints/epoch=49-step=18200.ckpt', device=None, grid_resolution=10):
+    def __init__(self, checkpoint='surrogate/outputs/berlinpro_surrogate/owhfbx24/checkpoints/epoch=689-step=99360.ckpt', validity_classifier='berlinpro_validity/4kf4034f/checkpoints/epoch=49-step=18200.ckpt', device=None, grid_resolution=20):
         self.model = BerlinPro2.load_from_checkpoint(checkpoint, map_location=device)
         self.model.freeze()
         self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)

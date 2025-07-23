@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
-from light_net import H5Dataset  # import from your file
+from surrogate import H5Dataset  # import from your file
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
         
