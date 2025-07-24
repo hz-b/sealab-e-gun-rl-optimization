@@ -110,7 +110,7 @@ def simulation(parameters, scratch_dir='/tmp', simulation_dir='./simulation'):
     for x in parameters:
         x = x.numpy()
         this_config_name = hashlib.sha256(str(x).encode()).hexdigest()
-        config_string = read_config_file(os.path.join(simulation_dir, 'Generator_Setup.in'))
+        config_string = read_config_file(os.path.join(simulation_dir, 'Generator_Setup'))
         
         dist_file_path = os.path.join(scratch_dir, this_config_name+'_dist')
         replace_generator = {'Dist' : dist_file_path, 'QBunch' : .1e-3, 'pulselength' : x[0], 'spotsize' : x[1]}
@@ -122,7 +122,7 @@ def simulation(parameters, scratch_dir='/tmp', simulation_dir='./simulation'):
         replace_astra = {'CavFields' : os.path.join(simulation_dir, 'CavFields'), 'Gun_Epeak' : x[2], 'Gun_Bias' : x[3], 'FF' : x[5], 'SpotXPos' : x[6], 'SpotYPos' : x[7], 'SolXPos' : x[10], 'SolYPos' : x[11], 'rotX' : x[12], 'rotY' : x[13], 'Gun_Phase' : x[8], 'BSol' : x[9], 'Gun_Field' : "%.f" % x[4], 'Zoff' : x[4]*1e-4, 'SpotZPos' : x[4]*1e-4, 'Start' : x[4]*1e-4, 'Stop' : 1.737, 'zSol' : 0.4625 }
         replace = {**replace_generator, **replace_astra}
 
-        config_string = read_config_file(os.path.join(simulation_dir, 'ASTRA_Setup.in'))
+        config_string = read_config_file(os.path.join(simulation_dir, 'ASTRA_Setup'))
         new_string = replace_variables(config_string, replace)
         astra_config_path = os.path.join(scratch_dir, this_config_name+'_astra.in')
         write_config_file(astra_config_path, new_string)
@@ -134,7 +134,7 @@ def simulation(parameters, scratch_dir='/tmp', simulation_dir='./simulation'):
         
         astra_output_path = os.path.join(scratch_dir, this_config_name+'_astra.0174')
         if not os.path.isfile(astra_output_path):
-            results_list.append(torch.zeros(6, dtype=torch.float32) * float("nan"))
+            results_list.append(torch.zeros(5, dtype=torch.float32) * float("nan"))
         else:
             results_list.append(read_output_file(astra_output_path))
 
