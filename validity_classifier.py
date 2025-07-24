@@ -1,10 +1,11 @@
+import os
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
-from surrogate import H5Dataset  # import from your file
+from surrogate import H5Dataset
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
         
@@ -44,7 +45,6 @@ class ValidityClassifier(pl.LightningModule):
         x, y = batch
         pred = self(x)
         y = y.unsqueeze(-1)
-        #print(pred.shape, y.shape)
         loss = self.loss_fn(pred, y)
         acc = ((pred > 0.5) == y.bool()).float().mean()
         self.log("val_loss", loss, on_epoch=True, prog_bar=True)
@@ -71,16 +71,10 @@ class ValidityClassifier(pl.LightningModule):
         incorrect_mask = ~correct_mask
 
         test_mask = (all_labels == 1.).squeeze(-1)
-        print(all_x[test_mask][0], "results in", pred_labels[test_mask][0])
-        #print(all_x.shape)
         
         x = all_x.numpy()
-        print("Running t-SNE on validation features...")
         tsne = TSNE(n_components=2, perplexity=30, random_state=42)
         x_tsne = tsne.fit_transform(x)
-        print("xtsne", x_tsne.shape)
-        print("correctmask", correct_mask.shape)
-        print("pred_labels all_labels", pred_labels.shape, all_labels.shape)
 
         plt.figure(figsize=(8, 6))
         plt.scatter(x_tsne[correct_mask, 0], x_tsne[correct_mask, 1],
@@ -90,8 +84,9 @@ class ValidityClassifier(pl.LightningModule):
         plt.title("t-SNE of Validation Set: Correct vs Incorrect Predictions")
         plt.legend()
         plt.grid(True)
-
-        fig_path = "outputs/val_tsne_correct_incorrect.png"
+        path = os.path.join(self.logger.save_dir, "berlinpro_validity", self.logger.experiment.id)
+        os.makedirs(path, exist_ok=True)
+        fig_path = os.path.join(path, "val_tsne_correct_incorrect.png")
         plt.savefig(fig_path)
         plt.close()
 
@@ -113,23 +108,11 @@ class ValidityClassifier(pl.LightningModule):
         return DataLoader(self.val_dataset, batch_size=self.hparams.batch_size)
 
     def prepare_data(self):
-
         full_dataset = H5Dataset(self.hparams.data_path, omit_outliers=False)
         un_z_scored_y = full_dataset.un_z_score_y(full_dataset.y)
-        # Define binary label: valid = 1, invalid = 0
-        #validity = (
-        #    (torch.abs(un_z_scored_y[:,0]) < 30) &
-        #    (torch.abs(un_z_scored_y[:,1]) < 30) &
-        #    (torch.abs(un_z_scored_y[:,2]) < 30) &
-        #    (torch.abs(un_z_scored_y[:,3]) < 30)
-        #).float()
-        
-        #print(f"{validity.sum().item()} out of {full_dataset.y[:, 0].shape[0]} samples are valid.")
         
         isnan_mask = torch.isnan(full_dataset.y[:, :4]).any(dim=1)
-        validity = isnan_mask.float()
-        #print(f"{isnan_mask.sum().item()} out of {full_dataset.y[:, 0].shape[0]} samples are nan.")
-        #print("full_dataset", full_dataset.x[:].max())
+        validity = (~isnan_mask).float()
 
         class ValidityDataset(Dataset):
             def __init__(self, x, labels):
@@ -145,12 +128,13 @@ class ValidityClassifier(pl.LightningModule):
         dataset = ValidityDataset(full_dataset.x, validity)
         train_size = int(0.7 * len(dataset))
         val_size = len(dataset) - train_size
-        #print("trainsize", train_size, "val_size", val_size)
+
         self.train_dataset, self.val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
 
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
+        parser.add_argument('name', type=str)
         parser.add_argument('--batch_size', type=int, default=1024)
         parser.add_argument('--learning_rate', type=float, default=1e-3)
         parser.add_argument('--data_path', type=str, default='datasets/bbp_ds_10m_merged.h5')
@@ -167,7 +151,7 @@ if __name__ == '__main__':
     hparams = parser.parse_args()
 
     model = ValidityClassifier(hparams)
-    wandb_logger = WandbLogger(project="berlinpro_validity", name="validity_clf", save_dir=model.hparams.output_dir)
+    wandb_logger = WandbLogger(name=model.hparams.name, project="berlinpro_validity", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_validity"))
 
     trainer = pl.Trainer(
         logger=wandb_logger,

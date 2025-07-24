@@ -4,8 +4,8 @@ from validity_classifier import ValidityClassifier
 from surrogate import BerlinPro2, H5Dataset
 
 class Critic:
-    def __init__(self, checkpoint='surrogate/outputs/berlinpro_surrogate/owhfbx24/checkpoints/epoch=689-step=99360.ckpt', validity_classifier='berlinpro_validity/4kf4034f/checkpoints/epoch=49-step=18200.ckpt', device=None, grid_resolution=20):
-        self.model = BerlinPro2.load_from_checkpoint(checkpoint, map_location=device)
+    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/dr1iyq3t/checkpoints/epoch=599-step=86400.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/r7hmmg07/checkpoints/epoch=49-step=18200.ckpt', device=None, grid_resolution=20):
+        self.model = BerlinPro2.load_from_checkpoint(surrogate, map_location=device)
         self.model.freeze()
         self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
         if self.validity_classifier is not None:
@@ -63,13 +63,13 @@ class Critic:
 
         if penalize_invalid:
             validity_scores = self.validity_classifier(merged_input)
-            validity = ~(validity_scores > 0.5).squeeze(-1)
+            validity = (validity_scores > 0.5).squeeze(-1)
             reward_copy = reward.clone()
             reward_copy[~validity] = 1000.
             return reward_copy
         return reward
 
-    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_forbidden_actions=False):
+    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False):
         """
         action_batch: (batch_size, 4)
         state_batch: (batch_size, 1, 8)
@@ -93,7 +93,7 @@ class Critic:
         expanded_actions = action_batch.repeat_interleave(N2, dim=0)
 
         # Get reward
-        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_forbidden_actions=penalize_forbidden_actions)  # (batch_size * N^2, 3)
+        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_invalid=penalize_invalid, penalize_forbidden_actions=penalize_forbidden_actions)  # (batch_size * N^2, 3)
         rewards = reward_output.view(batch_size, N2, 3)
 
         # Aggregate

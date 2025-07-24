@@ -66,7 +66,7 @@ class RandomModel(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x = batch
-        rewards_mean = self.critic_net(self(x), x)
+        rewards_mean = self.critic_net(self(x), x, penalize_invalid=False)
         self.log("x_pos_loss", rewards_mean[:,0].mean())
         self.log("y_pos_loss", rewards_mean[:,1].mean())
         self.log("size_loss", rewards_mean[:,2].mean())
@@ -77,7 +77,7 @@ class RandomModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        rewards_mean = self.critic_net(self(batch), batch).mean()
+        rewards_mean = self.critic_net(self(batch), batch, penalize_invalid=False).mean()
         self.log("val_loss", rewards_mean, prog_bar=True)
         return rewards_mean
 
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     seed = 42
     
     wandb_logger = WandbLogger(
-            name="ref6", project="berlinpro", save_dir='outputs', offline=False
+            name="ref6", project="berlinpro_decision_model", save_dir='outputs', offline=False
         )
     
     wandb.finish()

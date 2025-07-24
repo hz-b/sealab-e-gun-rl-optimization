@@ -72,7 +72,7 @@ class ZScoreDataset(Dataset):
         return y * self.yStd + self.yMean
 
 class H5Dataset(MinMaxDataset):
-    def __init__(self, path, omit_outliers=True):
+    def __init__(self, path, omit_outliers=True, limit_y=True):
         self.data = h5py.File(path,'r')
 
         self.x = self.data['X'][:]
@@ -83,19 +83,24 @@ class H5Dataset(MinMaxDataset):
         self.x = torch.from_numpy(self.x).float()
         self.y = torch.from_numpy(self.y).float()
 
-        mask = (abs(self.y[:, 0]) < 30) & (abs(self.y[:, 1]) < 30) & (abs(self.y[:, 2]) < 30) & (abs(self.y[:, 3]) < 30)
+        mask = (abs(self.y[:, :4]) < 30).all(dim=1)
         isnan_mask = torch.isnan(self.y[:, :4]).any(dim=1)
+        
+        if limit_y:
+            selection_mask = ~isnan_mask & mask
+        else:
+            selection_mask = ~isnan_mask
 
         #else:
         #    self.y[~mask] = torch.tensor(outlier_replacement, device=self.x.device).repeat(self.y[~mask].shape[0], 1)
         # perform min max first so we do not get nan everywhere
-        super().__init__(self.x, self.y[~isnan_mask])
+        super().__init__(self.x, self.y[selection_mask])
         self.x = self.z_score(self.x)
-        self.y[~isnan_mask] = self.z_score_y(self.y[~isnan_mask])
+        self.y[selection_mask] = self.z_score_y(self.y[selection_mask])
         
         if omit_outliers:
-            self.x = self.x[~isnan_mask]
-            self.y = self.y[~isnan_mask]
+            self.x = self.x[selection_mask]
+            self.y = self.y[selection_mask]
         
 
     def __len__(self):
@@ -115,7 +120,7 @@ class BerlinPro2(pl.LightningModule):
         self.val_y_hat = []
         
     def prepare_data(self):
-        self.dataset = H5Dataset(os.path.join(self.hparams.data_root,'bbp_ds_10m_merged.h5'))
+        self.dataset = H5Dataset(self.hparams.data_path)
 
         train_size = int(0.6 * len(self.dataset))
         val_size = int(0.2 * len(self.dataset))
@@ -187,27 +192,56 @@ class BerlinPro2(pl.LightningModule):
         
         output = {}
         plot_data_count = 1000
-        feature_rmses = []
-        for i in range(y.shape[1]):
-            feature_rmse = nn.MSELoss(reduction="mean")(y[:,i], y_hat[:,i]).sqrt()
-            feature_rmses.append(feature_rmse)
-            self.log("feature_rmse_"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_rmse)
+        
+        un_z_scored_y = self.dataset.un_z_score_y(y.cpu())
+        un_z_scored_y_hat = self.dataset.un_z_score_y(y_hat.cpu())
 
-        y_data = self.dataset.un_z_score_y(y[:plot_data_count].cpu())
-        y_hat_data = self.dataset.un_z_score_y(y_hat[:plot_data_count].cpu())
+        feature_mses = []
+        for i in range(y.shape[1]):
+            feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[:, i], un_z_scored_y_hat[:, i])
+            feature_mses.append(feature_mse)
+            self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_mse.mean().sqrt())
+
+        feature_mses_tensor = torch.stack(feature_mses, dim=1)  # shape: [num_samples, num_features]
+
+        # Compute the mean and std across samples for each feature
+        mean_rmse_per_feature = feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
+        std_rmse_per_feature = feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
+
+        
+        l_30_feature_mses = []
+        l_30_mask = (abs(un_z_scored_y[:, :4]) < 30).all(dim=1)
+        
+        feature_mses = []
+        for i in range(y.shape[1]):
+            l_30_feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[l_30_mask, i], un_z_scored_y_hat[l_30_mask, i])
+            l_30_feature_mses.append(l_30_feature_mse)
+            self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), l_30_feature_mse.mean().sqrt())
+
+        l_30_feature_mses_tensor = torch.stack(l_30_feature_mses, dim=1)  # shape: [num_samples, num_features]
+
+        # Compute the mean and std across samples for each feature
+        l_30_mean_rmse_per_feature = l_30_feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
+        l_30_std_rmse_per_feature = l_30_feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
+
+            
+        y_data = un_z_scored_y[:plot_data_count]
+        y_hat_data = un_z_scored_y_hat[:plot_data_count]
+        
         for i in range(y.shape[1]):
             mask = y_data[:,i] < 30000000
             joint = sns.jointplot(x=y_data[:,i][mask], y=y_hat_data[:,i][mask], kind='scatter').set_axis_labels("Real", "Predicted")
             joint.ax_joint.set_ylim(bottom=y_data[:, i][mask].min(), top=y_data[:, i][mask].max())
             joint.ax_joint.set_title(sim_Y_labels[i])
             joint.ax_joint.plot([y_data[:,i][mask].min(), y_data[:,i][mask].max()], [y_data[:,i][mask].min(), y_data[:,i][mask].max()], color="r")
+            rmse_str = f"RMSE: {mean_rmse_per_feature[i]:.4f} ± {std_rmse_per_feature[i]:.4f}, y < 30: {l_30_mean_rmse_per_feature[i]:.4f} ± {l_30_std_rmse_per_feature[i]:.4f}"
             joint.ax_joint.text(
-            0.5, -0.15, f"RMSE: {feature_rmses[i]:.4f}", 
+            0.5, -0.15, rmse_str, 
             transform=joint.ax_joint.transAxes, 
             ha='center', va='top'
             )
             plt.tight_layout()
-            path = os.path.join(self.logger.save_dir, self.logger.experiment.id)
+            path = os.path.join(self.logger.save_dir, "berlinpro_surrogate", self.logger.experiment.id)
             os.makedirs(path, exist_ok=True)
 
             plt.savefig(os.path.join(path, 'jointplot_'+str(i+1)+'.pdf'))
@@ -249,9 +283,6 @@ class BerlinPro2(pl.LightningModule):
         """
         parser = ArgumentParser(parents=[parent_parser])
 
-        # param overwrites
-        # parser.set_defaults(gradient_clip_val=5.0)
-
         # network params
         parser.add_argument('name', type=str)
         parser.add_argument('--layer_size', default=5, type=int)
@@ -260,13 +291,14 @@ class BerlinPro2(pl.LightningModule):
         parser.add_argument('--learning_rate', default=0.001, type=float)
 
         # data
-        parser.add_argument('--data_root', default='datasets', type=str)
+        parser.add_argument('--data_path', default='datasets/bbp_ds_10m_merged.h5', type=str)
         parser.add_argument('--output_dir', default='outputs', type=str)
+        parser.add_argument('--limit-y', default='True', type=bool)
 
         # training params (opt)
         parser.add_argument('--batch_size', default=2048, type=int)
         parser.add_argument('--num_workers', default=os.cpu_count(), type=int)
-        parser.add_argument('--gpus', default=0, type=int)
+        parser.add_argument('--gpus', default=1, type=int)
         parser.add_argument('--optimizer', default='adam', type=str)
         return parser
 
@@ -279,6 +311,6 @@ if __name__ == '__main__':
     
     logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
         
-    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=10, max_epochs=1000, num_nodes=1, logger=logger, precision=32)
+    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=10, max_epochs=1000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1)
     trainer.fit(model)
     trainer.test()

@@ -667,7 +667,7 @@ def jac_std_avg(model, stddev=.2):
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
-def load_model_critic_net(device, path='1ckm9pg8'):
+def load_model_critic_net(device, path='tfw20je2'):
     critic_net = Critic(device=device)
     path = get_checkpoint_path(path)
     model = RandomModel.load_from_checkpoint(path, critic_net=critic_net,  map_location=device).to(device)
