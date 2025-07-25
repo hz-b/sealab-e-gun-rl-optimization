@@ -8,7 +8,7 @@ import pickle
 
 network_outputs_list = []
 repetitions = 2
-device=torch.device('cuda')
+device=torch.device('cpu')
 model, critic_net = load_model_critic_net(device)
 ds = RandomIterableDataset(repetitions, 8, 10000000, device)
 h5ds = H5Dataset(os.path.join('datasets','bbp_ds_10m_merged.h5'))
