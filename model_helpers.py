@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import math
 
-def create_sequential(input_length, output_length, layer_size, blow: int | float = 0, shrink_factor="log", activation_function=nn.ReLU(), last_activation=None, batch_norm=False, layer_norm=False):
+def create_sequential(input_length, output_length, layer_size, blow = 0, shrink_factor="log", activation_function=nn.ReLU(), last_activation=None, batch_norm=False, layer_norm=False):
     layers = [input_length]
     blow_disabled = blow == 1 or blow == 0
     if not blow_disabled:
