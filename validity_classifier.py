@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 from surrogate import H5Dataset
-from sklearn.manifold import TSNE
+#from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
         
 class ValidityClassifier(pl.LightningModule):
@@ -72,27 +72,27 @@ class ValidityClassifier(pl.LightningModule):
 
         test_mask = (all_labels == 1.).squeeze(-1)
         
-        x = all_x.numpy()
-        tsne = TSNE(n_components=2, perplexity=30, random_state=42)
-        x_tsne = tsne.fit_transform(x)
+        #x = all_x.numpy()
+        #tsne = TSNE(n_components=2, perplexity=30, random_state=42)
+        #x_tsne = tsne.fit_transform(x)
 
-        plt.figure(figsize=(8, 6))
-        plt.scatter(x_tsne[correct_mask, 0], x_tsne[correct_mask, 1],
-                    c='green', label='Correct', alpha=0.5, s=10)
-        plt.scatter(x_tsne[incorrect_mask, 0], x_tsne[incorrect_mask, 1],
-                    c='red', label='Incorrect', alpha=0.5, s=10)
-        plt.title("t-SNE of Validation Set: Correct vs Incorrect Predictions")
-        plt.legend()
-        plt.grid(True)
-        path = os.path.join(self.logger.save_dir, "berlinpro_validity", self.logger.experiment.id)
-        os.makedirs(path, exist_ok=True)
-        fig_path = os.path.join(path, "val_tsne_correct_incorrect.png")
-        plt.savefig(fig_path)
-        plt.close()
+        #plt.figure(figsize=(8, 6))
+        #plt.scatter(x_tsne[correct_mask, 0], x_tsne[correct_mask, 1],
+        #            c='green', label='Correct', alpha=0.5, s=10)
+        #plt.scatter(x_tsne[incorrect_mask, 0], x_tsne[incorrect_mask, 1],
+        #            c='red', label='Incorrect', alpha=0.5, s=10)
+        #plt.title("t-SNE of Validation Set: Correct vs Incorrect Predictions")
+        #plt.legend()
+        #plt.grid(True)
+        #path = os.path.join(self.logger.save_dir, "berlinpro_validity", self.logger.experiment.id)
+        #os.makedirs(path, exist_ok=True)
+        #fig_path = os.path.join(path, "val_tsne_correct_incorrect.png")
+        #plt.savefig(fig_path)
+        #plt.close()
 
-        if isinstance(self.logger, WandbLogger):
-            import wandb
-            self.logger.experiment.log({"val_tsne_scatter": wandb.Image(fig_path)})
+        #if isinstance(self.logger, WandbLogger):
+        #    import wandb
+        #    self.logger.experiment.log({"val_tsne_scatter": wandb.Image(fig_path)})
 
         # Clear buffer
         self._val_outputs.clear()
