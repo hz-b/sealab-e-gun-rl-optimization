@@ -13,6 +13,9 @@ import subprocess
 import pandas as pd
 import numpy as np
 from collections import OrderedDict
+from multiprocessing import Pool, cpu_count
+import tqdm
+
 
 sim_Y_labels = ["Horizontal beam size [mm]", "Vertical beam size [mm]", "Horizontal beam position [mm]", "Vertical beam postion [mm]", "Average beam momentum [MeV/c]"]
 
@@ -115,7 +118,7 @@ def simulation(parameters, scratch_dir='/tmp', simulation_dir='./simulation'):
         dist_file_path = os.path.join(scratch_dir, this_config_name+'_dist')
         replace_generator = {'Dist' : dist_file_path, 'QBunch' : .1e-3, 'pulselength' : x[0], 'spotsize' : x[1]}
         new_string = replace_variables(config_string, replace_generator)
-        generator_config_path = os.path.join(scratch_dir, this_config_name+'_gen.in')
+        generator_config_path = os.path.join(scratch_dir, this_config_name+'_gen')
 
         write_config_file(generator_config_path, new_string)
 
@@ -144,5 +147,19 @@ def simulation(parameters, scratch_dir='/tmp', simulation_dir='./simulation'):
                 os.remove(file_path)
     return torch.stack(results_list)
 
+def simulation_parallel(parameters, core_count=None):
+    if core_count is None:
+        core_count = cpu_count()
+
+    # Ensure input is a list of length n, where each element is a 1D tensor/list of length 14
+    parameters = [p.unsqueeze(0) for p in parameters]
+
+    with Pool(core_count) as p:
+        results = list(tqdm.tqdm(p.imap(simulation, parameters), total=len(parameters)))
+
+    # results is a list of [1, 5] tensors → stack them into [n, 5]
+    stacked = torch.cat(results, dim=0)
+    return stacked  # shape [n, 5]
+    
 if __name__ == '__main__':
-    print(simulation(sample(2,1)))
+    print(simulation_parallel(sample(2,2)))

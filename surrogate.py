@@ -14,6 +14,8 @@ import seaborn as sns
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'data_generation')))
 from simulation import sim_Y_labels
 import matplotlib.pyplot as plt
+from distutils.util import strtobool
+
 
 #sns.set(style="darkgrid")
 
@@ -85,7 +87,6 @@ class H5Dataset(MinMaxDataset):
 
         mask = (abs(self.y[:, :4]) < 30).all(dim=1)
         isnan_mask = torch.isnan(self.y[:, :4]).any(dim=1)
-        
         if limit_y:
             selection_mask = ~isnan_mask & mask
         else:
@@ -120,7 +121,7 @@ class BerlinPro2(pl.LightningModule):
         self.val_y_hat = []
         
     def prepare_data(self):
-        self.dataset = H5Dataset(self.hparams.data_path)
+        self.dataset = H5Dataset(self.hparams.data_path, limit_y=self.hparams.limit_y)
 
         train_size = int(0.6 * len(self.dataset))
         val_size = int(0.2 * len(self.dataset))
@@ -293,7 +294,7 @@ class BerlinPro2(pl.LightningModule):
         # data
         parser.add_argument('--data_path', default='datasets/bbp_ds_10m_merged.h5', type=str)
         parser.add_argument('--output_dir', default='outputs', type=str)
-        parser.add_argument('--limit-y', default='True', type=bool)
+        parser.add_argument('--limit_y', type=lambda x: bool(strtobool(x)), default=False)
 
         # training params (opt)
         parser.add_argument('--batch_size', default=2048, type=int)

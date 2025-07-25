@@ -17,9 +17,9 @@ class Critic:
             self.model = self.model.to(device)
         
         # Precompute the phase/solenoid grid
-        self.N = grid_resolution
-        grid_phase = torch.linspace(0.1, 0.9, self.N, device=self.model.device)
-        grid_solenoid = torch.linspace(0.6, 0.9, self.N, device=self.model.device)
+        self.N2 = grid_resolution ** 2
+        grid_phase = torch.linspace(0.1, 0.9, grid_resolution, device=self.model.device)
+        grid_solenoid = torch.linspace(0.6, 0.9, grid_resolution, device=self.model.device)
         mesh_phase, mesh_solenoid = torch.meshgrid(grid_phase, grid_solenoid, indexing='ij')
         self.grid_phase_flat = mesh_phase.reshape(-1, 1)        # (N^2, 1)
         self.grid_solenoid_flat = mesh_solenoid.reshape(-1, 1)  # (N^2, 1)
@@ -69,20 +69,12 @@ class Critic:
             return reward_copy
         return reward
 
-    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False):
-        """
-        action_batch: (batch_size, 4)
-        state_batch: (batch_size, 1, 8)
-        Returns: (batch_size, 3)
-        """
+    def expand_action_states(self, action_batch, state_batch):
         batch_size = state_batch.shape[0]
-        if clamping:
-            action_batch = torch.clamp(action_batch, min=0.0, max=1.0)
-        N2 = self.N ** 2
 
         # Process state
         state = state_batch.squeeze(1)  # (batch_size, 8)
-        state_tiled = state.repeat_interleave(N2, dim=0)
+        state_tiled = state.repeat_interleave(self.N2, dim=0)
 
         phase_repeated = self.grid_phase_flat.repeat(batch_size, 1)
         solenoid_repeated = self.grid_solenoid_flat.repeat(batch_size, 1)
@@ -90,11 +82,23 @@ class Critic:
         expanded_states = torch.cat([state_tiled, phase_repeated, solenoid_repeated], dim=1)
 
         # Process actions
-        expanded_actions = action_batch.repeat_interleave(N2, dim=0)
+        expanded_actions = action_batch.repeat_interleave(self.N2, dim=0)
+        return expanded_actions, expanded_states
 
+    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False):
+        """
+        action_batch: (batch_size, 4)
+        state_batch: (batch_size, 1, 8)
+        Returns: (batch_size, 3)
+        """
+        
+        if clamping:
+            action_batch = torch.clamp(action_batch, min=0.0, max=1.0)
+
+        expanded_actions, expanded_states = self.expand_action_states(action_batch, state_batch)
         # Get reward
         reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_invalid=penalize_invalid, penalize_forbidden_actions=penalize_forbidden_actions)  # (batch_size * N^2, 3)
-        rewards = reward_output.view(batch_size, N2, 3)
+        rewards = reward_output.view(state_batch.shape[0], self.N2, 3)
 
         # Aggregate
         rewards_mean = rewards.mean(dim=1)  # (batch_size, 3)
