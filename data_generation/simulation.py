@@ -118,7 +118,7 @@ def simulation(parameters, scratch_dir='/tmp', simulation_dir='./simulation'):
         dist_file_path = os.path.join(scratch_dir, this_config_name+'_dist')
         replace_generator = {'Dist' : dist_file_path, 'QBunch' : .1e-3, 'pulselength' : x[0], 'spotsize' : x[1]}
         new_string = replace_variables(config_string, replace_generator)
-        generator_config_path = os.path.join(scratch_dir, this_config_name+'_gen')
+        generator_config_path = os.path.join(scratch_dir, this_config_name+'_gen.in')
 
         write_config_file(generator_config_path, new_string)
 
