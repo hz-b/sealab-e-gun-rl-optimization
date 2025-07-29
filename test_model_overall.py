@@ -19,6 +19,6 @@ for i, state in enumerate(tqdm(ds, total=repetitions)):
         expanded_actions, expanded_states = critic_net.expand_action_states(state, model(state))
         merged_input = torch.cat([expanded_states, expanded_actions], dim=1)
         merged_un_z_scored_input = h5ds.un_z_score(merged_input.cpu())
-        output = simulation_parallel(merged_un_z_scored_input[:1])
+        output = simulation_parallel(merged_un_z_scored_input)
         with open('outputs/test_model_overall_'+str(i)+'.pkl', 'wb') as handle:
             pickle.dump(output, handle)
