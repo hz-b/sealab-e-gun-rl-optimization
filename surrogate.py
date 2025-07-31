@@ -78,7 +78,7 @@ class H5Dataset(MinMaxDataset):
         self.data = h5py.File(path,'r')
 
         self.x = self.data['X'][:]
-        self.y = self.data['Y'][:, :5]
+        self.y = self.data['Y'][:, :4]
         
         self.data.close()
         
@@ -115,7 +115,7 @@ class BerlinPro2(pl.LightningModule):
         super(BerlinPro2, self).__init__()
         self.save_hyperparameters(hparams)
         #self.hparams = hparams
-        self.net = self.create_sequential(14, 5, self.hparams.layer_size, blow=self.hparams.blow, shrink_factor=self.hparams.shrink_factor)
+        self.net = self.create_sequential(14, 4, self.hparams.layer_size, blow=self.hparams.blow, shrink_factor=self.hparams.shrink_factor)
         self.val_x = []
         self.val_y = []
         self.val_y_hat = []
