@@ -165,11 +165,13 @@ def eval_evotorch_GA(state, niter, popsize=200, stdev=0.01, tournament_size=64, 
     output = torch.stack(optimization_values)
 
     best_indices = output.mean(dim=-1).argmin(dim=1)
+    best_solution = ga.status["pop_best"].values.clone()
+
     if state.device.type == "cuda":
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return output[torch.arange(niter), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    return output[torch.arange(niter), best_indices], best_solution, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
     
 def eval_scipy_annealing(state, niter, device=torch.device('cpu'), visit=2.62, accept=-5, initial_temp=5230.0):
     state = state.to(device)
