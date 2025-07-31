@@ -7,6 +7,7 @@ import os
 import sys
 import wandb
 import numpy as np
+import multiprocessing
 from torch.utils.data import Dataset, DataLoader
 from lightning.pytorch.loggers import WandbLogger
 from argparse import ArgumentParser
@@ -113,6 +114,7 @@ class H5Dataset(MinMaxDataset):
 class BerlinPro2(pl.LightningModule):
     def __init__(self, hparams):
         super(BerlinPro2, self).__init__()
+        self.num_workers = self.get_cpu_count()
         self.save_hyperparameters(hparams)
         #self.hparams = hparams
         self.net = self.create_sequential(14, 4, self.hparams.layer_size, blow=self.hparams.blow, shrink_factor=self.hparams.shrink_factor)
@@ -163,6 +165,14 @@ class BerlinPro2(pl.LightningModule):
                 nn_layers.append(nn.ReLU())
                 nn_layers.append(nn.BatchNorm1d(layers[i+1].item()))
         return nn.Sequential(*nn_layers)
+    @staticmethod
+    def get_cpu_count():
+        slurm_cpus = os.environ.get("SLURM_CPUS_ON_NODE")
+        if slurm_cpus:
+            return int(slurm_cpus)
+        else:
+            print("multi", multiprocessing.cpu_count())
+            return multiprocessing.cpu_count()
         
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -266,13 +276,13 @@ class BerlinPro2(pl.LightningModule):
             return [torch.optim.SGD(model.parameters(), lr=self.hparams.learning_rate, momentum=0.9)]
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, shuffle=True, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, pin_memory=self.on_gpu)
+        return DataLoader(self.train_dataset, shuffle=True, batch_size=self.hparams.batch_size, num_workers=self.num_workers, pin_memory=self.on_gpu)
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, shuffle=False, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, pin_memory=self.on_gpu)
+        return DataLoader(self.val_dataset, shuffle=False, batch_size=self.hparams.batch_size, num_workers=self.num_workers, pin_memory=self.on_gpu)
 
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, shuffle=False, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, pin_memory=self.on_gpu)
+        return DataLoader(self.test_dataset, shuffle=False, batch_size=self.hparams.batch_size, num_workers=self.num_workers, pin_memory=self.on_gpu)
 
     @staticmethod
     def add_model_specific_args(parent_parser):  # pragma: no cover
@@ -298,7 +308,6 @@ class BerlinPro2(pl.LightningModule):
 
         # training params (opt)
         parser.add_argument('--batch_size', default=2048, type=int)
-        parser.add_argument('--num_workers', default=os.cpu_count(), type=int)
         parser.add_argument('--gpus', default=1, type=int)
         parser.add_argument('--optimizer', default='adam', type=str)
         return parser
