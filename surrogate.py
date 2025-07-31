@@ -271,9 +271,32 @@ class BerlinPro2(pl.LightningModule):
 
     def configure_optimizers(self):
         if self.hparams.optimizer == 'adam':
-            return [torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)]
+            optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == 'sgd':
-            return [torch.optim.SGD(model.parameters(), lr=self.hparams.learning_rate, momentum=0.9)]
+            optimizer = torch.optim.SGD(self.parameters(), lr=self.hparams.learning_rate, momentum=0.9)
+        else:
+            raise ValueError(f"Unsupported optimizer: {self.hparams.optimizer}")
+
+        if self.hparams.patience is not None:
+            scheduler = {
+                'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    optimizer,
+                    mode='min',
+                    patience=self.hparams.patience,
+                    factor=0.1,
+                    verbose=True
+                ),
+                'monitor': 'val_loss',
+                'interval': 'epoch',
+                'frequency': 1
+            }
+            return {
+                'optimizer': optimizer,
+                'lr_scheduler': scheduler
+            }
+        else:
+            return optimizer
+
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, shuffle=True, batch_size=self.hparams.batch_size, num_workers=self.num_workers, pin_memory=self.on_gpu)
@@ -310,6 +333,7 @@ class BerlinPro2(pl.LightningModule):
         parser.add_argument('--batch_size', default=2048, type=int)
         parser.add_argument('--gpus', default=1, type=int)
         parser.add_argument('--optimizer', default='adam', type=str)
+        parser.add_argument('--patience', default=None, type=int, help='Patience for ReduceLROnPlateau scheduler. If None, scheduler is not used.')
         return parser
 
 if __name__ == '__main__':
@@ -321,6 +345,6 @@ if __name__ == '__main__':
     
     logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
         
-    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=10, max_epochs=1000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1)
+    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=10, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1)
     trainer.fit(model)
     trainer.test()
