@@ -284,7 +284,6 @@ class BerlinPro2(pl.LightningModule):
                     mode='min',
                     patience=self.hparams.patience,
                     factor=0.1,
-                    verbose=True
                 ),
                 'monitor': 'val_loss',
                 'interval': 'epoch',
