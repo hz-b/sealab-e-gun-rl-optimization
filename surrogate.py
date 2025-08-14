@@ -1,7 +1,7 @@
 import math
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
+import lightning as pl
 import h5py
 import os
 import sys
@@ -10,6 +10,8 @@ import numpy as np
 import multiprocessing
 from torch.utils.data import Dataset, DataLoader
 from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.callbacks import LearningRateMonitor
+from lightning.pytorch import seed_everything
 from argparse import ArgumentParser
 import seaborn as sns
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'data_generation')))
@@ -326,7 +328,7 @@ class BerlinPro2(pl.LightningModule):
         parser.add_argument('--learning_rate', default=0.001, type=float)
 
         # data
-        parser.add_argument('--data_path', default='datasets/bbp_ds_10m_merged.h5', type=str)
+        parser.add_argument('--data_path', default='datasets/bbp_ds_2m_merged_v2.h5', type=str)
         parser.add_argument('--output_dir', default='outputs', type=str)
         parser.add_argument('--limit_y', type=lambda x: bool(strtobool(x)), default=False)
 
@@ -338,14 +340,15 @@ class BerlinPro2(pl.LightningModule):
         return parser
 
 if __name__ == '__main__':
-    pl.trainer.seed_everything(42)
+    seed_everything(42)
     parser = BerlinPro2.add_model_specific_args(ArgumentParser(add_help=False))
     model = BerlinPro2(parser.parse_args())
     
     print(model.net)
     
     logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
+    lr_monitor = LearningRateMonitor(logging_interval='step')
         
-    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=1, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1)
+    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=1, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1, callbacks=[lr_monitor])
     trainer.fit(model)
     trainer.test()
