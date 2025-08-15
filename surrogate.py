@@ -200,77 +200,78 @@ class BerlinPro2(pl.LightningModule):
         return val_loss
 
     def on_validation_epoch_end(self):
-        x = torch.cat([i for i in self.val_x])
-        y = torch.cat([i for i in self.val_y])
-        y_hat = torch.cat([i for i in self.val_y_hat])
-        
-        output = {}
-        plot_data_count = 1000
-        
-        un_z_scored_y = self.dataset.un_z_score_y(y.cpu())
-        un_z_scored_y_hat = self.dataset.un_z_score_y(y_hat.cpu())
+        if (self.current_epoch + 1) % 10 == 0:
+            x = torch.cat([i for i in self.val_x])
+            y = torch.cat([i for i in self.val_y])
+            y_hat = torch.cat([i for i in self.val_y_hat])
+            
+            output = {}
+            plot_data_count = 1000
+            
+            un_z_scored_y = self.dataset.un_z_score_y(y.cpu())
+            un_z_scored_y_hat = self.dataset.un_z_score_y(y_hat.cpu())
 
-        feature_mses = []
-        for i in range(y.shape[1]):
-            feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[:, i], un_z_scored_y_hat[:, i])
-            feature_mses.append(feature_mse)
-            self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_mse.mean().sqrt())
+            feature_mses = []
+            for i in range(y.shape[1]):
+                feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[:, i], un_z_scored_y_hat[:, i])
+                feature_mses.append(feature_mse)
+                self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_mse.mean().sqrt())
 
-        feature_mses_tensor = torch.stack(feature_mses, dim=1)  # shape: [num_samples, num_features]
+            feature_mses_tensor = torch.stack(feature_mses, dim=1)  # shape: [num_samples, num_features]
 
-        # Compute the mean and std across samples for each feature
-        mean_rmse_per_feature = feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
-        std_rmse_per_feature = feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
-
-        
-        l_30_feature_mses = []
-        l_30_mask = (abs(un_z_scored_y[:, :4]) < 30).all(dim=1)
-        
-        feature_mses = []
-        for i in range(y.shape[1]):
-            l_30_feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[l_30_mask, i], un_z_scored_y_hat[l_30_mask, i])
-            l_30_feature_mses.append(l_30_feature_mse)
-            self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), l_30_feature_mse.mean().sqrt())
-
-        l_30_feature_mses_tensor = torch.stack(l_30_feature_mses, dim=1)  # shape: [num_samples, num_features]
-
-        # Compute the mean and std across samples for each feature
-        l_30_mean_rmse_per_feature = l_30_feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
-        l_30_std_rmse_per_feature = l_30_feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
+            # Compute the mean and std across samples for each feature
+            mean_rmse_per_feature = feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
+            std_rmse_per_feature = feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
 
             
-        y_data = un_z_scored_y[:plot_data_count]
-        y_hat_data = un_z_scored_y_hat[:plot_data_count]
-        
-        for i in range(y.shape[1]):
-            mask = y_data[:,i] < 30000000
-            joint = sns.jointplot(x=y_data[:,i][mask], y=y_hat_data[:,i][mask], kind='scatter').set_axis_labels("Real", "Predicted")
-            joint.ax_joint.set_ylim(bottom=y_data[:, i][mask].min(), top=y_data[:, i][mask].max())
-            joint.ax_joint.set_title(sim_Y_labels[i])
-            joint.ax_joint.plot([y_data[:,i][mask].min(), y_data[:,i][mask].max()], [y_data[:,i][mask].min(), y_data[:,i][mask].max()], color="r")
-            rmse_str = f"RMSE: {mean_rmse_per_feature[i]:.4f} ± {std_rmse_per_feature[i]:.4f}, y < 30: {l_30_mean_rmse_per_feature[i]:.4f} ± {l_30_std_rmse_per_feature[i]:.4f}"
-            joint.ax_joint.text(
-            0.5, -0.15, rmse_str, 
-            transform=joint.ax_joint.transAxes, 
-            ha='center', va='top'
-            )
-            plt.tight_layout()
-            path = os.path.join(self.logger.save_dir, "berlinpro_surrogate", self.logger.experiment.id)
-            os.makedirs(path, exist_ok=True)
-
-            plt.savefig(os.path.join(path, 'jointplot_'+str(i+1)+'.pdf'))
+            l_30_feature_mses = []
+            l_30_mask = (abs(un_z_scored_y[:, :4]) < 30).all(dim=1)
             
-            wandb.log({sim_Y_labels[i].replace(" ", "_").replace("/", "\\"): wandb.Image(joint.fig)})
-            joint.fig.clf()
-            plt.close(joint.fig)
-            errorplot = sns.jointplot(x=y_data[:,i][mask], y=y_data[:,i][mask]-y_hat_data[:,i][mask], color="g").fig
-            plt.tight_layout()
-            plt.savefig(os.path.join(path, 'line_plot_'+str(i+1)+'.pdf'))
-            plt.close(errorplot)
+            feature_mses = []
+            for i in range(y.shape[1]):
+                l_30_feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[l_30_mask, i], un_z_scored_y_hat[l_30_mask, i])
+                l_30_feature_mses.append(l_30_feature_mse)
+                self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), l_30_feature_mse.mean().sqrt())
 
-        self.val_x.clear()
-        self.val_y.clear()
-        self.val_y_hat.clear()
+            l_30_feature_mses_tensor = torch.stack(l_30_feature_mses, dim=1)  # shape: [num_samples, num_features]
+
+            # Compute the mean and std across samples for each feature
+            l_30_mean_rmse_per_feature = l_30_feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
+            l_30_std_rmse_per_feature = l_30_feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
+
+                
+            y_data = un_z_scored_y[:plot_data_count]
+            y_hat_data = un_z_scored_y_hat[:plot_data_count]
+            
+            for i in range(y.shape[1]):
+                mask = y_data[:,i] < 30000000
+                joint = sns.jointplot(x=y_data[:,i][mask], y=y_hat_data[:,i][mask], kind='scatter').set_axis_labels("Real", "Predicted")
+                joint.ax_joint.set_ylim(bottom=y_data[:, i][mask].min(), top=y_data[:, i][mask].max())
+                joint.ax_joint.set_title(sim_Y_labels[i])
+                joint.ax_joint.plot([y_data[:,i][mask].min(), y_data[:,i][mask].max()], [y_data[:,i][mask].min(), y_data[:,i][mask].max()], color="r")
+                rmse_str = f"RMSE: {mean_rmse_per_feature[i]:.4f} ± {std_rmse_per_feature[i]:.4f}, y < 30: {l_30_mean_rmse_per_feature[i]:.4f} ± {l_30_std_rmse_per_feature[i]:.4f}"
+                joint.ax_joint.text(
+                0.5, -0.15, rmse_str, 
+                transform=joint.ax_joint.transAxes, 
+                ha='center', va='top'
+                )
+                plt.tight_layout()
+                path = os.path.join(self.logger.save_dir, "berlinpro_surrogate", self.logger.experiment.id)
+                os.makedirs(path, exist_ok=True)
+
+                plt.savefig(os.path.join(path, 'jointplot_'+str(i+1)+'.pdf'))
+                
+                wandb.log({sim_Y_labels[i].replace(" ", "_").replace("/", "\\"): wandb.Image(joint.fig)})
+                joint.fig.clf()
+                plt.close(joint.fig)
+                errorplot = sns.jointplot(x=y_data[:,i][mask], y=y_data[:,i][mask]-y_hat_data[:,i][mask], color="g").fig
+                plt.tight_layout()
+                plt.savefig(os.path.join(path, 'line_plot_'+str(i+1)+'.pdf'))
+                plt.close(errorplot)
+
+            self.val_x.clear()
+            self.val_y.clear()
+            self.val_y_hat.clear()
 
     def configure_optimizers(self):
         if self.hparams.optimizer == 'adam':
@@ -348,6 +349,6 @@ if __name__ == '__main__':
     logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
         
-    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=10, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1, callbacks=[lr_monitor])
+    trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=1, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1, callbacks=[lr_monitor])
     trainer.fit(model)
     trainer.test()
