@@ -322,6 +322,7 @@ class BerlinPro2(pl.LightningModule):
 
         # network params
         parser.add_argument('name', type=str)
+        parser.add_argument('--transfer_ckpt_path', type=str)
         parser.add_argument('--layer_size', default=5, type=int)
         parser.add_argument('--blow', default=143., type=float)
         parser.add_argument('--shrink_factor', default="log", type=str)
@@ -342,7 +343,11 @@ class BerlinPro2(pl.LightningModule):
 if __name__ == '__main__':
     seed_everything(42)
     parser = BerlinPro2.add_model_specific_args(ArgumentParser(add_help=False))
-    model = BerlinPro2(parser.parse_args())
+    transfer_ckpt_path = parser.parse_args().transfer_ckpt_path
+    if transfer_ckpt_path is not None:
+        model = BerlinPro2.load_from_checkpoint(transfer_ckpt_path)
+    else:
+        model = BerlinPro2(parser.parse_args())
     
     print(model.net)
     
