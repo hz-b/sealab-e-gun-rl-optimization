@@ -88,19 +88,19 @@ class H5Dataset(MinMaxDataset):
         self.x = torch.from_numpy(self.x).float()
         self.y = torch.from_numpy(self.y).float()
 
-        mask = (abs(self.y[:, :4]) < 30).all(dim=1)
+        limit_y_mask = (abs(self.y[:, :4]) < 30).all(dim=1)
         isnan_mask = torch.isnan(self.y[:, :4]).any(dim=1)
         if limit_y:
-            selection_mask = ~isnan_mask & mask
+            selection_mask = ~isnan_mask & limit_y_mask
         else:
             selection_mask = ~isnan_mask
 
         #else:
         #    self.y[~mask] = torch.tensor(outlier_replacement, device=self.x.device).repeat(self.y[~mask].shape[0], 1)
         # perform min max first so we do not get nan everywhere
-        super().__init__(self.x, self.y[selection_mask])
+        super().__init__(self.x, self.y[~isnan_mask])
         self.x = self.z_score(self.x)
-        self.y[selection_mask] = self.z_score_y(self.y[selection_mask])
+        self.y[~isnan_mask] = self.z_score_y(self.y[~isnan_mask])
         
         if omit_outliers:
             self.x = self.x[selection_mask]
@@ -347,7 +347,7 @@ if __name__ == '__main__':
     print(model.net)
     
     logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
-    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    lr_monitor = LearningRateMonitor()
         
     trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=1, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1, callbacks=[lr_monitor])
     trainer.fit(model)
