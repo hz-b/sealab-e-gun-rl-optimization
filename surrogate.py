@@ -180,8 +180,6 @@ class BerlinPro2(pl.LightningModule):
         x, y = batch
         y_hat = self.forward(x)
         loss = nn.MSELoss()(y, y_hat)
-        current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
-        print(f"Current LR: {current_lr}")
         self.log("train_loss", loss)
         return loss
 
