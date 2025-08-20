@@ -180,6 +180,8 @@ class BerlinPro2(pl.LightningModule):
         x, y = batch
         y_hat = self.forward(x)
         loss = nn.MSELoss()(y, y_hat)
+        current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
+        print(f"Current LR: {current_lr}")
         self.log("train_loss", loss)
         return loss
 
@@ -346,12 +348,15 @@ if __name__ == '__main__':
     transfer_ckpt_path = parser.parse_args().transfer_ckpt_path
     if transfer_ckpt_path is not None:
         model = BerlinPro2.load_from_checkpoint(transfer_ckpt_path)
+        new_lr = parser.parse_args().learning_rate
+        if new_lr is not None:
+            model.hparams.learning_rate = new_lr
     else:
         model = BerlinPro2(parser.parse_args())
     
     print(model.net)
     
-    logger = WandbLogger(name=model.hparams.name, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
+    logger = WandbLogger(name=model.hparams.name, offline=True, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
     lr_monitor = LearningRateMonitor()
         
     trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=1, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1, callbacks=[lr_monitor])
