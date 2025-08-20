@@ -354,7 +354,7 @@ if __name__ == '__main__':
     
     print(model.net)
     
-    logger = WandbLogger(name=model.hparams.name, offline=True, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
+    logger = WandbLogger(name=model.hparams.name, offline=False, project="berlinpro_surrogate", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_surrogate"))
     lr_monitor = LearningRateMonitor()
         
     trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=1, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1, callbacks=[lr_monitor])
