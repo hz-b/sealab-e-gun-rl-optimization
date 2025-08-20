@@ -297,6 +297,19 @@ class BerlinPro2(pl.LightningModule):
                 'optimizer': optimizer,
                 'lr_scheduler': scheduler
             }
+        elif self.hparams.lr_decay_gamma is not None:
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(
+                optimizer,
+                gamma=self.hparams.lr_decay_gamma
+            )
+            return {
+                'optimizer': optimizer,
+                'lr_scheduler': {
+                    'scheduler': scheduler,
+                    'interval': 'epoch',
+                    'frequency': 1
+                }
+            }
         else:
             return optimizer
 
@@ -338,6 +351,7 @@ class BerlinPro2(pl.LightningModule):
         parser.add_argument('--gpus', default=1, type=int)
         parser.add_argument('--optimizer', default='adam', type=str)
         parser.add_argument('--patience', default=None, type=int, help='Patience for ReduceLROnPlateau scheduler. If None, scheduler is not used.')
+        parser.add_argument('--lr_decay_gamma', default=None, type=float, help='Decay Gamma for ExponentialLR scheduler. If None, scheduler is not used.')
         return parser
 
 if __name__ == '__main__':
