@@ -4,15 +4,20 @@ from validity_classifier import ValidityClassifier
 from surrogate import BerlinPro2, H5Dataset
 
 class Critic:
-    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/dr1iyq3t/checkpoints/epoch=599-step=86400.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/r7hmmg07/checkpoints/epoch=49-step=18200.ckpt', device=None, grid_resolution=20):
+    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/dr1iyq3t/checkpoints/epoch=599-step=86400.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/r7hmmg07/checkpoints/epoch=49-step=18200.ckpt', fine_surrogate=None, device=None, grid_resolution=20):
         self.model = BerlinPro2.load_from_checkpoint(surrogate, map_location=device)
         self.model.freeze()
-        self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
-        if self.validity_classifier is not None:
+        self.model.eval()
+        if validity_classifier is not None:
+            self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
             self.validity_classifier.freeze()
             if device is not None:
                 self.validity_classifier = self.validity_classifier.to(device)
-            
+        if fine_surrogate is not None:
+            self.fine_surrogate =  BerlinPro2.load_from_checkpoint(fine_surrogate, map_location=self.model.device)
+            self.fine_surrogate.freeze()
+            self.fine_surrogate.eval()
+
         if device is not None:
             self.model = self.model.to(device)
         
