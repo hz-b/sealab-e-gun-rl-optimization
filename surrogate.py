@@ -38,7 +38,13 @@ class MinMaxDataset(Dataset):
         # Apply normalization
         self.x_norm = self.z_score(x)
         self.y_norm = self.z_score_y(y)
-
+    def change_z_score_device(self, device):
+        self.min = self.min.to(device)
+        self.max = self.max.to(device)
+        self.z = self.z.to(device)
+        self.minY = self.minY.to(device)
+        self.maxY = self.maxY.to(device)
+        self.zY = self.zY.to(device)
     def z_score(self, x):
         return (x - self.min) / self.z
 
@@ -98,9 +104,9 @@ class H5Dataset(MinMaxDataset):
         #else:
         #    self.y[~mask] = torch.tensor(outlier_replacement, device=self.x.device).repeat(self.y[~mask].shape[0], 1)
         # perform min max first so we do not get nan everywhere
-        super().__init__(self.x, self.y[~isnan_mask])
+        super().__init__(self.x, self.y[selection_mask])
         self.x = self.z_score(self.x)
-        self.y[~isnan_mask] = self.z_score_y(self.y[~isnan_mask])
+        self.y[selection_mask] = self.z_score_y(self.y[selection_mask])
         
         if omit_outliers:
             self.x = self.x[selection_mask]
@@ -173,7 +179,6 @@ class BerlinPro2(pl.LightningModule):
         if slurm_cpus:
             return int(slurm_cpus)
         else:
-            print("multi", multiprocessing.cpu_count())
             return multiprocessing.cpu_count()
         
     def training_step(self, batch, batch_idx):
