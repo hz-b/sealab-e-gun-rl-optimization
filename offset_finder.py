@@ -161,7 +161,7 @@ def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sa
 
 if __name__ == "__main__":
     fine_model_path = "outputs/berlinpro_surrogate/berlinpro_surrogate/zmz50ufb/checkpoints/epoch=9999-step=2530000.ckpt"
-    critic = Critic(surrogate="outputs/berlinpro_surrogate/berlinpro_surrogate/z6nqot36/checkpoints/epoch=140-step=51465.ckpt", fine_surrogate=fine_model_path)
+    critic = Critic(surrogate="outputs/berlinpro_surrogate/berlinpro_surrogate/jlp0mkw3/checkpoints/epoch=9999-step=3650000.ckpt", fine_surrogate=fine_model_path)
     
     validity_classifier = critic.validity_classifier
     fine_model = critic.fine_surrogate
