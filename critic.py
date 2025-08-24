@@ -11,6 +11,7 @@ class Critic:
         if validity_classifier is not None:
             self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
             self.validity_classifier.freeze()
+            self.validity_classifier.eval()
             if device is not None:
                 self.validity_classifier = self.validity_classifier.to(device)
         if fine_surrogate is not None:

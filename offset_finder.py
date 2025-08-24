@@ -119,12 +119,16 @@ def optimize_evotorch_ga(
     loss_min_params = best.values + uncompensated_parameters
     return loss_min_params.squeeze(-1), best_loss, loss_history
 
-def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=1):
+def prepare_datasets(critic):
+    model = critic.model
     model.prepare_data()
     model.dataset.change_z_score_device(model.device)
-    fine_model.prepare_data()
-    fine_model.dataset.change_z_score_device(model.device)
+    if hasattr(critic, 'fine_surrogate'):
+        fine_surrogate = critic.fine_surrogate
+        fine_surrogate.prepare_data()
+        fine_surrogate.dataset.change_z_score_device(fine_surrogate.device)
     
+def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=1):
     un_z_score_y = model.dataset.un_z_score_y
     z_score_y = model.dataset.z_score_y
     
@@ -161,11 +165,10 @@ def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sa
 
 if __name__ == "__main__":
     fine_model_path = "outputs/berlinpro_surrogate/berlinpro_surrogate/zmz50ufb/checkpoints/epoch=9999-step=2530000.ckpt"
-    critic = Critic(surrogate="outputs/berlinpro_surrogate/berlinpro_surrogate/jlp0mkw3/checkpoints/epoch=9999-step=3650000.ckpt", fine_surrogate=fine_model_path)
-    
-    validity_classifier = critic.validity_classifier
-    fine_model = critic.fine_surrogate
+    critic = Critic(surrogate="outputs/berlinpro_surrogate/berlinpro_surrogate/z6nqot36/checkpoints/epoch=140-step=51465.ckpt", fine_surrogate=fine_model_path)
     model = critic.model
-    
-    rmse, nan_count = rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=100)
+    fine_model = critic.fine_surrogate
+    validity_classifier = critic.validity_classifier
+    prepare_datasets(critic)
+    rmse, nan_count = rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=1)
     print("RMSE:", rmse, "NaN#", nan_count)
