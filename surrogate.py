@@ -224,10 +224,6 @@ class BerlinPro2(pl.LightningModule):
     def on_load_checkpoint(self, checkpoint):
         self.normalizer = checkpoint['normalizer']
             
-    def on_fit_start(self):
-        if hasattr(self, "normalizer"):
-            self.normalizer.to(self.device)
-        
     def configure_optimizers(self):
         if self.hparams.optimizer == 'adam':
             optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
