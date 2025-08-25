@@ -90,6 +90,7 @@ class H5Dataset(MinMaxDataset):
         self.y = self.data['Y'][:, :4]
         
         self.data.close()
+        del self.data
         
         self.x = torch.from_numpy(self.x).float()
         self.y = torch.from_numpy(self.y).float()
