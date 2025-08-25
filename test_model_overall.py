@@ -11,7 +11,7 @@ repetitions = 2
 device=torch.device('cuda')
 model, critic_net = load_model_critic_net(device)
 ds = RandomIterableDataset(repetitions, 8, 10000000, device)
-h5ds = H5Dataset(os.path.join('datasets','bbp_ds_10m_merged.h5'))
+normalizer = critic_net.model.normalizer
 
 mode = "ga" # "model" or "ga"
 
@@ -29,7 +29,7 @@ for i, state in enumerate(tqdm(ds, total=repetitions)):
 
         expanded_actions, expanded_states = critic_net.expand_action_states(state, action)
         merged_input = torch.cat([expanded_states, expanded_actions], dim=1)
-        merged_un_z_scored_input = h5ds.un_z_score(merged_input.cpu())
-        output = simulation_parallel(merged_un_z_scored_input)
+        merged_unscored_input = normalizer.unscore_x(merged_input.cpu())
+        output = simulation_parallel(merged_unscored_input)
         with open('outputs/test_model_overall_'+mode+'_'+str(i)+'.pkl', 'wb') as handle:
             pickle.dump(output, handle)

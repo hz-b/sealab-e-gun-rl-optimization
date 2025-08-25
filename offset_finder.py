@@ -26,7 +26,7 @@ def generate_configurations(model, validity_classifier, max_offset=0.2, offset_c
 
     with torch.no_grad():
         model_output = model(filtered_parameters)  # shape: (N, 1)
-    within_border = (abs(model.dataset.un_z_score_y(model_output)) <30).all(-1).squeeze(-1)  # shape: (N,)
+    within_border = (abs(model.normalizer.unscore_y(model_output)) <30).all(-1).squeeze(-1)  # shape: (N,)
     
     # Step 3: Use classifier on already range-valid configs
     with torch.no_grad():
@@ -55,12 +55,12 @@ def optimize_evotorch_ga(
         with torch.no_grad():
             tensor_sum = x + uncompensated_parameters ###model.rescale_offset(x) → model
             compensated_rays = model(tensor_sum)
-            y = model.dataset.un_z_score_y(compensated_rays)
+            y = model.normalizer.unscore_y(compensated_rays)
             if fine_model is not None:
                 limit_y_mask = (abs(y[:, :4]) < 30).all(dim=1)
                 compensated_rays = compensated_rays.clone()
                 fine_model_outputs = fine_model(tensor_sum[limit_y_mask])
-                rescored_fine_model_outputs = model.dataset.z_score_y(fine_model.dataset.un_z_score_y(fine_model_outputs))
+                rescored_fine_model_outputs = model.normalizer.score_y(fine_model.normalizer.unscore_y(fine_model_outputs))
                 compensated_rays[limit_y_mask] = rescored_fine_model_outputs
             loss_orig = ((compensated_rays - observed_experiment) ** 2).mean(-1)#.mean(0).mean(0).mean(-1) #cus_loss(compensated_rays, observed_rays) #
         return loss_orig
@@ -117,37 +117,28 @@ def optimize_evotorch_ga(
     loss_min_params = best.values + uncompensated_parameters
     return loss_min_params.squeeze(-1), best_loss, loss_history
 
-def prepare_datasets(critic):
-    model = critic.model
-    model.prepare_data()
-    model.dataset.change_z_score_device(model.device)
-    if hasattr(critic, 'fine_surrogate'):
-        fine_surrogate = critic.fine_surrogate
-        fine_surrogate.prepare_data()
-        fine_surrogate.dataset.change_z_score_device(fine_surrogate.device)
-    
 def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=1):
-    un_z_score_y = model.dataset.un_z_score_y
-    z_score_y = model.dataset.z_score_y
+    unscore_y = model.normalizer.unscore_y
+    score_y = model.normalizer.score_y
     
-    z_score = model.dataset.z_score
-    un_z_score = model.dataset.un_z_score
+    score_x = model.normalizer.score_x
+    unscore_x = model.normalizer.unscore_x
     
-    fine_un_z_score_y = fine_model.dataset.un_z_score_y
-    fine_z_score_y = fine_model.dataset.z_score_y
-    fine_z_score = fine_model.dataset.z_score
-    un_z_scored_target_parameters_list = []
-    un_z_scored_compensated_parameters_list = []
+    fine_score_y = fine_model.normalizer.unscore_y
+    fine_score_y = fine_model.normalizer.score_y
+    fine_score_x = fine_model.normalizer.score_x
+    unscored_target_parameters_list = []
+    unscored_compensated_parameters_list = []
     
     for i in range(sample_count):
         uncompensated_parameters, offsets, observed_experiment = generate_configurations(model, validity_classifier, offset_count=1000, seed=i+1)
         compensated_parameters, best_loss, _ = optimize_evotorch_ga(model, validity_classifier, observed_experiment, uncompensated_parameters, fine_model=fine_model, iterations=3000, num_candidates=10000)
-        un_z_scored_target_parameters_list.append(un_z_score(uncompensated_parameters + offsets).squeeze(0))
-        un_z_scored_compensated_parameters_list.append(un_z_score(compensated_parameters))
-    un_z_scored_target_parameters = torch.stack(un_z_scored_target_parameters_list)
-    un_z_scored_compensated_parameters = torch.stack(un_z_scored_compensated_parameters_list)
+        unscored_target_parameters_list.append(unscore(uncompensated_parameters + offsets).squeeze(0))
+        unscored_compensated_parameters_list.append(unscore(compensated_parameters))
+    unscored_target_parameters = torch.stack(unscored_target_parameters_list)
+    unscored_compensated_parameters = torch.stack(unscored_compensated_parameters_list)
     
-    simulation_input = torch.cat((un_z_scored_target_parameters, un_z_scored_compensated_parameters))
+    simulation_input = torch.cat((unscored_target_parameters, unscored_compensated_parameters))
     simulation_output = simulation_parallel(simulation_input.cpu())
     simulated_target = simulation_output[:sample_count]
     simulated_compensated = simulation_output[sample_count:]
@@ -163,11 +154,6 @@ def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sa
     return rmse, std, nan_count
 
 if __name__ == "__main__":
-    fine_model_path = "outputs/berlinpro_surrogate/berlinpro_surrogate/zmz50ufb/checkpoints/epoch=9999-step=2530000.ckpt"
-    critic = Critic(surrogate="outputs/berlinpro_surrogate/berlinpro_surrogate/vmie5smk/checkpoints/epoch=9999-step=3650000.ckpt", fine_surrogate=fine_model_path)
-    model = critic.model
-    fine_model = critic.fine_surrogate
-    validity_classifier = critic.validity_classifier
-    prepare_datasets(critic)
-    rmse, std, nan_count = rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=2)
+    critic = Critic()
+    rmse, std, nan_count = rmse_simulated_target_compensated(critic.model, critic.fine_surrogate, critic.validity_classifier, sample_count=2)
     print("RMSE:", rmse, "Std:", std, "NaN#", nan_count)
