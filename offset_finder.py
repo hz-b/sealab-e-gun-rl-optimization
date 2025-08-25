@@ -58,13 +58,11 @@ def optimize_evotorch_ga(
             y = model.dataset.un_z_score_y(compensated_rays)
             if fine_model is not None:
                 limit_y_mask = (abs(y[:, :4]) < 30).all(dim=1)
-                #print(y[limit_y_mask].shape)
                 compensated_rays = compensated_rays.clone()
                 fine_model_outputs = fine_model(tensor_sum[limit_y_mask])
                 rescored_fine_model_outputs = model.dataset.z_score_y(fine_model.dataset.un_z_score_y(fine_model_outputs))
                 compensated_rays[limit_y_mask] = rescored_fine_model_outputs
             loss_orig = ((compensated_rays - observed_experiment) ** 2).mean(-1)#.mean(0).mean(0).mean(-1) #cus_loss(compensated_rays, observed_rays) #
-            #print(loss_orig.shape)
         return loss_orig
     
     def constrained_loss(x: torch.Tensor) -> torch.Tensor:
@@ -159,16 +157,17 @@ def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sa
     simulated_compensated = simulated_compensated[~mask]
     
     rmse = ((simulated_target - simulated_compensated) ** 2).mean(dim=0).sqrt()
+    std = ((simulated_target - simulated_compensated) ** 2).std(dim=0).sqrt()
     #print("RMSE", rmse, "NaNs", (mask).sum().item())
     nan_count = mask.sum().item()
-    return rmse, nan_count
+    return rmse, std, nan_count
 
 if __name__ == "__main__":
     fine_model_path = "outputs/berlinpro_surrogate/berlinpro_surrogate/zmz50ufb/checkpoints/epoch=9999-step=2530000.ckpt"
-    critic = Critic(surrogate="outputs/berlinpro_surrogate/berlinpro_surrogate/jlp0mkw3/checkpoints/epoch=9999-step=3650000.ckpt", fine_surrogate=fine_model_path)
+    critic = Critic(surrogate="outputs/berlinpro_surrogate/berlinpro_surrogate/vmie5smk/checkpoints/epoch=9999-step=3650000.ckpt", fine_surrogate=fine_model_path)
     model = critic.model
     fine_model = critic.fine_surrogate
     validity_classifier = critic.validity_classifier
     prepare_datasets(critic)
-    rmse, nan_count = rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=1)
-    print("RMSE:", rmse, "NaN#", nan_count)
+    rmse, std, nan_count = rmse_simulated_target_compensated(model, fine_model, validity_classifier, sample_count=2)
+    print("RMSE:", rmse, "Std:", std, "NaN#", nan_count)
