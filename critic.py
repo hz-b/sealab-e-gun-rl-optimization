@@ -4,12 +4,10 @@ from validity_classifier import ValidityClassifier
 from surrogate import BerlinPro2, H5Dataset
 
 class Critic:
-    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/vmie5smk/checkpoints/epoch=9999-step=3650000.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/r7hmmg07/checkpoints/epoch=49-step=18200.ckpt', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/zmz50ufb/checkpoints/epoch=9999-step=2530000.ckpt', device=None, grid_resolution=20):
+    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/tvb742tc/checkpoints/epoch=1-step=506.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/fkhegq2y/checkpoints/epoch=9-step=3640.ckpt', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/tvb742tc/checkpoints/epoch=1-step=506.ckpt', device=None, grid_resolution=20):
         self.model = BerlinPro2.load_from_checkpoint(surrogate, map_location=device)
         self.model.freeze()
         self.model.eval()
-        self.model.prepare_data()
-        self.model.dataset.change_z_score_device(self.model.device)
         if validity_classifier is not None:
             self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
             self.validity_classifier.freeze()
@@ -20,8 +18,6 @@ class Critic:
             self.fine_surrogate =  BerlinPro2.load_from_checkpoint(fine_surrogate, map_location=self.model.device)
             self.fine_surrogate.freeze()
             self.fine_surrogate.eval()
-            self.fine_surrogate.prepare_data()
-            self.fine_surrogate.dataset.change_z_score_device(self.fine_surrogate.device)
 
         if device is not None:
             self.model = self.model.to(device)
@@ -33,9 +29,8 @@ class Critic:
         mesh_phase, mesh_solenoid = torch.meshgrid(grid_phase, grid_solenoid, indexing='ij')
         self.grid_phase_flat = mesh_phase.reshape(-1, 1)        # (N^2, 1)
         self.grid_solenoid_flat = mesh_solenoid.reshape(-1, 1)  # (N^2, 1)
-        ds = H5Dataset(os.path.join('datasets','bbp_ds_10m_merged.h5')) #TODO temporary, change to light_net import dir
-        self.output_min = ds.minY.to(self.model.device) 
-        self.output_max = ds.maxY.to(self.model.device)
+        self.output_min = self.model.normalizer.y_min
+        self.output_max = self.model.normalizer.y_max
         self.normalized_zero = -self.output_min / (self.output_max - self.output_min)
    
 
@@ -64,11 +59,12 @@ class Critic:
         merged_input = torch.cat([expanded_states, expanded_actions], dim=1)
         output = self.model(merged_input)
         if hasattr(self, "fine_surrogate"):
-            limit_y_mask = (abs(self.model.dataset.un_z_score_y(output)) <30).all(-1).squeeze(-1)  # shape: (N,)
-            print(limit_y_mask.shape)
+            limit_y_mask = (abs(self.model.normalizer.unscore_y(output)) <30).all(-1).squeeze(-1)  # shape: (N,)
+            #print(limit_y_mask.shape)
             fine_model_outputs = self.fine_surrogate(merged_input[limit_y_mask])
-            rescored_fine_model_outputs = self.model.dataset.z_score_y(self.fine_surrogate.dataset.un_z_score_y(fine_model_outputs))
-            compensated_rays[limit_y_mask] = rescored_fine_model_outputs
+            rescored_fine_model_outputs = self.model.normalizer.unscore_y(self.fine_surrogate.normalizer.unscore_y(fine_model_outputs))
+            output = output.clone()
+            output[limit_y_mask] = rescored_fine_model_outputs
         reward =  self.calculate_reward(output, norm=norm)
         if penalize_forbidden_actions:
             forbidden_actions_mask = (expanded_actions < 0.) | (expanded_actions > 1.)

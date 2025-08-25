@@ -108,10 +108,9 @@ class ValidityClassifier(pl.LightningModule):
         return DataLoader(self.val_dataset, batch_size=self.hparams.batch_size)
 
     def prepare_data(self):
-        full_dataset = H5Dataset(self.hparams.data_path, omit_outliers=False)
-        un_z_scored_y = full_dataset.un_z_score_y(full_dataset.y)
+        full_dataset = H5Dataset(self.hparams.data_path, raw=True)
         
-        isnan_mask = torch.isnan(full_dataset.y[:, :4]).any(dim=1)
+        isnan_mask = torch.isnan(full_dataset.y_norm[:, :4]).any(dim=1)
         validity = (~isnan_mask).float()
 
         class ValidityDataset(Dataset):
@@ -125,7 +124,7 @@ class ValidityClassifier(pl.LightningModule):
             def __getitem__(self, idx):
                 return self.x[idx], self.labels[idx]
 
-        dataset = ValidityDataset(full_dataset.x, validity)
+        dataset = ValidityDataset(full_dataset.x_norm, validity)
         train_size = int(0.7 * len(dataset))
         val_size = len(dataset) - train_size
 

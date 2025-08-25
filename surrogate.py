@@ -18,107 +18,44 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'data_ge
 from simulation import sim_Y_labels
 import matplotlib.pyplot as plt
 from distutils.util import strtobool
-
-
+from normalizer import Normalizer
 #sns.set(style="darkgrid")
 
-class MinMaxDataset(Dataset):
-    def __init__(self, x, y):
+class H5Dataset(Dataset):
+    def __init__(self, path, limit_y=True, raw=False):
+        data = h5py.File(path,'r')
 
-        # Compute min, max, and range for features
-        self.min = torch.min(x, dim=0).values
-        self.max = torch.max(x, dim=0).values
-        self.z = self.max - self.min
-
-        # Compute min, max, and range for targets
-        self.minY = torch.min(y, dim=0).values
-        self.maxY = torch.max(y, dim=0).values
-        self.zY = self.maxY - self.minY
-
-        # Apply normalization
-        self.x_norm = self.z_score(x)
-        self.y_norm = self.z_score_y(y)
-    def change_z_score_device(self, device):
-        self.min = self.min.to(device)
-        self.max = self.max.to(device)
-        self.z = self.z.to(device)
-        self.minY = self.minY.to(device)
-        self.maxY = self.maxY.to(device)
-        self.zY = self.zY.to(device)
-    def z_score(self, x):
-        return (x - self.min) / self.z
-
-    def un_z_score(self, x):
-        return x * self.z + self.min
-
-    def z_score_y(self, y):
-        return (y - self.minY) / self.zY
-
-    def un_z_score_y(self, y):
-        return y * self.zY + self.minY
-
-    def __len__(self):
-        return len(self.x_norm)
-
-    def __getitem__(self, idx):
-        return self.x_norm[idx], self.y_norm[idx]
-
-class ZScoreDataset(Dataset):
-    def __init__(self, x, y):
-        self.mean = np.mean(x, axis=1)
-        self.std = np.std(x, axis=1)
-        self.yMean = np.mean(y, axis=1)
-        self.yStd = np.std(y, axis=1)
+        x = data['X'][:]
+        y = data['Y'][:, :4]
         
-    def z_score(self, x):
-        return (x - self.mean) / self.std
-
-    def un_z_score(self, x):
-        return x * self.std + self.mean
-
-    def z_score_y(self, y):
-        return (y - self.yMean) / self.yStd
-
-    def un_z_score_y(self, y):
-        return y * self.yStd + self.yMean
-
-class H5Dataset(MinMaxDataset):
-    def __init__(self, path, omit_outliers=True, limit_y=True):
-        self.data = h5py.File(path,'r')
-
-        self.x = self.data['X'][:]
-        self.y = self.data['Y'][:, :4]
+        data.close()
+        del data
         
-        self.data.close()
-        del self.data
-        
-        self.x = torch.from_numpy(self.x).float()
-        self.y = torch.from_numpy(self.y).float()
+        x = torch.from_numpy(x).float()
+        y = torch.from_numpy(y).float()
+        if raw:
+            self.x_norm = x
+            self.y_norm = y
+            return
 
-        limit_y_mask = (abs(self.y[:, :4]) < 30).all(dim=1)
-        isnan_mask = torch.isnan(self.y[:, :4]).any(dim=1)
+        limit_y_mask = (abs(y[:, :4]) < 30).all(dim=1)
+        isnan_mask = torch.isnan(y[:, :4]).any(dim=1)
         if limit_y:
             selection_mask = ~isnan_mask & limit_y_mask
         else:
             selection_mask = ~isnan_mask
-
-        #else:
-        #    self.y[~mask] = torch.tensor(outlier_replacement, device=self.x.device).repeat(self.y[~mask].shape[0], 1)
-        # perform min max first so we do not get nan everywhere
-        super().__init__(self.x, self.y[selection_mask])
-        self.x = self.z_score(self.x)
-        self.y[selection_mask] = self.z_score_y(self.y[selection_mask])
+        # score on all x values (also nan and out of bound y, they may be used)
+        # score y according to limit and not on nans for y
+        self.normalizer = Normalizer(x, y[selection_mask], method="minmax")
         
-        if omit_outliers:
-            self.x = self.x[selection_mask]
-            self.y = self.y[selection_mask]
+        self.x_norm = self.normalizer.score_x(x[selection_mask])
+        self.y_norm = self.normalizer.score_y(y[selection_mask])
         
-
     def __len__(self):
-        return self.x.shape[0]
+        return self.x_norm.shape[0]
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y[idx]
+        return self.x_norm[idx], self.y_norm[idx]
 
 class BerlinPro2(pl.LightningModule):
     def __init__(self, hparams):
@@ -130,9 +67,11 @@ class BerlinPro2(pl.LightningModule):
         self.val_x = []
         self.val_y = []
         self.val_y_hat = []
+        self.normalizer = None
         
     def prepare_data(self):
         self.dataset = H5Dataset(self.hparams.data_path, limit_y=self.hparams.limit_y)
+        self.normalizer = self.dataset.normalizer
 
         train_size = int(0.6 * len(self.dataset))
         val_size = int(0.2 * len(self.dataset))
@@ -214,8 +153,8 @@ class BerlinPro2(pl.LightningModule):
             output = {}
             plot_data_count = 1000
             
-            un_z_scored_y = self.dataset.un_z_score_y(y.cpu())
-            un_z_scored_y_hat = self.dataset.un_z_score_y(y_hat.cpu())
+            un_z_scored_y = self.normalizer.unscore_y(y.cpu())
+            un_z_scored_y_hat = self.normalizer.unscore_y(y_hat.cpu())
 
             feature_mses = []
             for i in range(y.shape[1]):
@@ -279,6 +218,16 @@ class BerlinPro2(pl.LightningModule):
             self.val_y.clear()
             self.val_y_hat.clear()
 
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['normalizer'] = self.normalizer
+
+    def on_load_checkpoint(self, checkpoint):
+        self.normalizer = checkpoint['normalizer']
+            
+    def on_fit_start(self):
+        if hasattr(self, "normalizer"):
+            self.normalizer.to(self.device)
+        
     def configure_optimizers(self):
         if self.hparams.optimizer == 'adam':
             optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
