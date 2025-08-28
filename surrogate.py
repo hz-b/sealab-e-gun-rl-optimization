@@ -223,7 +223,16 @@ class BerlinPro2(pl.LightningModule):
 
     def on_load_checkpoint(self, checkpoint):
         self.normalizer = checkpoint['normalizer']
-            
+
+    @classmethod
+    def load_from_checkpoint(cls, checkpoint_path, map_location=None, **kwargs):
+        model = super().load_from_checkpoint(checkpoint_path, map_location=map_location, **kwargs)
+
+        if hasattr(model, 'normalizer') and model.normalizer is not None:
+            model.normalizer.to(model.device)
+
+        return model
+        
     def configure_optimizers(self):
         if self.hparams.optimizer == 'adam':
             optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
