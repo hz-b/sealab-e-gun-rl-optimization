@@ -133,8 +133,8 @@ def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sa
     for i in range(sample_count):
         uncompensated_parameters, offsets, observed_experiment = generate_configurations(model, validity_classifier, offset_count=1000, seed=i+1)
         compensated_parameters, best_loss, _ = optimize_evotorch_ga(model, validity_classifier, observed_experiment, uncompensated_parameters, fine_model=fine_model, iterations=3000, num_candidates=10000)
-        unscored_target_parameters_list.append(unscore(uncompensated_parameters + offsets).squeeze(0))
-        unscored_compensated_parameters_list.append(unscore(compensated_parameters))
+        unscored_target_parameters_list.append(unscore_x(uncompensated_parameters + offsets).squeeze(0))
+        unscored_compensated_parameters_list.append(unscore_x(compensated_parameters))
     unscored_target_parameters = torch.stack(unscored_target_parameters_list)
     unscored_compensated_parameters = torch.stack(unscored_compensated_parameters_list)
     
