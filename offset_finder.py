@@ -143,7 +143,7 @@ def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sa
     simulated_target = simulation_output[:sample_count]
     simulated_compensated = simulation_output[sample_count:]
     
-    mask = torch.isnan(simulated_target).any(dim=1) & torch.isnan(simulated_compensated).any(dim=1)
+    mask = torch.isnan(simulated_target).any(dim=1) | torch.isnan(simulated_compensated).any(dim=1)
     simulated_target = simulated_target[~mask]
     simulated_compensated = simulated_compensated[~mask]
     
