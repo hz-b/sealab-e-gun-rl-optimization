@@ -205,15 +205,16 @@ if __name__ == "__main__":
 
     #rmse, std, nan_count = rmse_simulated_target_compensated(critic.model, critic.fine_surrogate, critic.validity_classifier, sample_count=2)
     #print("RMSE:", rmse, "Std:", std, "NaN#", nan_count)
-    uncompensated_parameters, final_offsets, experiment_output = generate_stacked_configurations(model, fine_model, validity_classifier, num_iterations=100, offset_count=100000)
+    uncompensated_parameters, final_offsets, experiment_output = generate_stacked_configurations(model, fine_model, validity_classifier, num_iterations=200, offset_count=100000)
     experiment_simulation_output = compare_label_surrogate_simulation(fine_model, uncompensated_parameters+final_offsets, experiment_output, label="blueprint")
     scored_experiment_simulation_output = model.normalizer.score_y(experiment_simulation_output)
+    mask = ~torch.isnan(experiment_simulation_output).any(dim=1) & ~(torch.abs(experiment_simulation_output)>30).any(dim=1)
 
     loss_min_params_list = []
-    for i, entry in enumerate(scored_experiment_simulation_output):
-        loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, entry, uncompensated_parameters[i], fine_model)
+    for i, entry in enumerate(scored_experiment_simulation_output[mask]):
+        loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, entry, uncompensated_parameters[mask][i], fine_model)
         loss_min_params_list.append(loss_min_params)
     loss_min_tensor = torch.stack(loss_min_params_list)
     
-    fine_scored_experiment_simulation_output = fine_model.normalizer.score_y(experiment_simulation_output)
+    fine_scored_experiment_simulation_output = fine_model.normalizer.score_y(experiment_simulation_output[mask])
     compare_label_surrogate_simulation(fine_model, loss_min_tensor, fine_scored_experiment_simulation_output, label="result")
