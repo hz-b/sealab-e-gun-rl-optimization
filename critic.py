@@ -4,7 +4,7 @@ from validity_classifier import ValidityClassifier
 from surrogate import BerlinPro2, H5Dataset
 
 class Critic:
-    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/7w2za3qa/checkpoints/epoch=9999-step=3650000.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/r7hmmg07/checkpoints/epoch=49-step=18200.ckpt', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/q2hke2pp/checkpoints/epoch=9999-step=2530000.ckpt', device=None, grid_resolution=20):
+    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/7w2za3qa/checkpoints/epoch=9999-step=3650000.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/2ulcfpww/checkpoints/epoch=49-step=18200.ckpt', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/q2hke2pp/checkpoints/epoch=9999-step=2530000.ckpt', device=None, grid_resolution=20):
         self.model = BerlinPro2.load_from_checkpoint(surrogate, map_location=device)
         self.model.freeze()
         self.model.eval()
@@ -74,7 +74,7 @@ class Critic:
             return reward_copy
 
         if penalize_invalid:
-            validity_scores = self.validity_classifier(merged_input)
+            validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(merged_input))
             validity = (validity_scores > 0.5).squeeze(-1)
             reward_copy = reward.clone()
             reward_copy[~validity] = 1000.

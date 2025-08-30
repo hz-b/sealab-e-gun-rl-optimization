@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 from simulation import sim_Y_labels, simulation_parallel
 
 
-def generate_configurations(model, validity_classifier, max_offset=0.2, offset_count=100, seed=42):
+def generate_configurations(model, fine_model, validity_classifier, max_offset=0.2, offset_count=100, seed=42):
     torch.manual_seed(seed)
     # Generate configurations
     uncompensated_parameters = torch.rand((14), device=model.device)  # shape: (14,)
@@ -30,7 +30,7 @@ def generate_configurations(model, validity_classifier, max_offset=0.2, offset_c
     
     # Step 3: Use classifier on already range-valid configs
     with torch.no_grad():
-        validity_scores = validity_classifier(filtered_parameters)  # shape: (N, 1)
+        validity_scores = validity_classifier(model.normalizer.unscore_x(filtered_parameters))  # shape: (N, 1)
     validity = (validity_scores > 0.5).squeeze(-1)  # shape: (N,)
     
     # Step 4: Apply second filter to parameters and offsets
@@ -40,7 +40,7 @@ def generate_configurations(model, validity_classifier, max_offset=0.2, offset_c
 
     # Step 5: Predict with the model
     with torch.no_grad():
-        experiment_output = model(final_target_parameters)
+        experiment_output = fine_model(final_target_parameters)
     if final_offsets.shape[0] == 0:
         raise Exception("No fitting offset found.")
     return uncompensated_parameters, final_offsets, experiment_output
@@ -70,7 +70,7 @@ def optimize_evotorch_ga(
         total_loss = loss(x) + 1.0 * penalty  # Add large penalty for violations
 
         with torch.no_grad():
-            validity_scores = validity_classifier(x + uncompensated_parameters)  # shape: (N, 1)
+            validity_scores = validity_classifier(model.normalizer.unscore_x(x + uncompensated_parameters))  # shape: (N, 1)
             validity = (validity_scores > 0.5).squeeze(-1)  # shape: (N,)
             total_loss = total_loss + 1.0 * ~validity
     
@@ -153,7 +153,67 @@ def rmse_simulated_target_compensated(model, fine_model, validity_classifier, sa
     nan_count = mask.sum().item()
     return rmse, std, nan_count
 
+def simulation_like(model, x):
+    #return model(x)
+    model.normalizer.to(model.device)
+    simulation_result = simulation_parallel(model.normalizer.unscore_x(x.cuda()).cpu())[:, :4].to(model.device)
+    return model.normalizer.score_y(simulation_result)
+
+def compare_label_surrogate_simulation(model, x, y=None, label="sur_sim"):
+    with torch.no_grad():
+        if y is not None:
+            target = model.normalizer.unscore_y(y.cuda())
+            torch.save(target, "outputs/label_"+label+".pt")
+            print("Label says", target)
+        surrogate = model.normalizer.unscore_y(model(x.cuda()))
+        torch.save(surrogate, "outputs/surrogate_"+label+".pt")
+        print("Surrogate says", surrogate)
+        simulation_result = model.normalizer.unscore_y(simulation_like(model, x.cuda()))
+        torch.save(simulation_result, "outputs/simulation_"+label+".pt")
+        print("Simulation says", simulation_result)
+        return simulation_result
+
+def generate_stacked_configurations(model, fine_model, validity_classifier, offset_count=100000, num_iterations=100, **args):
+    sets_list = []
+    experiment_output_list = []
+    uncompensated_parameters_list = []
+    final_offsets_list = []
+    
+    # Loop for a certain number of iterations
+    for i in range(num_iterations):
+        # Generate configurations (replace with your actual function)
+        uncompensated_parameters, final_offsets, experiment_output = generate_configurations(
+            model, fine_model, validity_classifier, offset_count=offset_count, seed=i, **args)
+    
+        # Stack the outputs in the lists
+        uncompensated_parameters_list.append(uncompensated_parameters)
+        final_offsets_list.append(final_offsets[0])
+        experiment_output_list.append(experiment_output[0])
+    
+    # After the loop, convert the lists to tensors and stack them
+    uncompensated_parameters_tensor = torch.stack(uncompensated_parameters_list)
+    final_offsets_tensor = torch.stack(final_offsets_list)
+    experiment_output_tensor = torch.stack(experiment_output_list)
+
+    return uncompensated_parameters_tensor, final_offsets_tensor, experiment_output_tensor
+    
 if __name__ == "__main__":
     critic = Critic()
-    rmse, std, nan_count = rmse_simulated_target_compensated(critic.model, critic.fine_surrogate, critic.validity_classifier, sample_count=2)
-    print("RMSE:", rmse, "Std:", std, "NaN#", nan_count)
+    validity_classifier = critic.validity_classifier
+    fine_model = critic.fine_surrogate
+    model = critic.model
+
+    #rmse, std, nan_count = rmse_simulated_target_compensated(critic.model, critic.fine_surrogate, critic.validity_classifier, sample_count=2)
+    #print("RMSE:", rmse, "Std:", std, "NaN#", nan_count)
+    uncompensated_parameters, final_offsets, experiment_output = generate_stacked_configurations(model, fine_model, validity_classifier, num_iterations=100, offset_count=100000)
+    experiment_simulation_output = compare_label_surrogate_simulation(fine_model, uncompensated_parameters+final_offsets, experiment_output, label="blueprint")
+    scored_experiment_simulation_output = model.normalizer.score_y(experiment_simulation_output)
+
+    loss_min_params_list = []
+    for i, entry in enumerate(scored_experiment_simulation_output):
+        loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, entry, uncompensated_parameters[i], fine_model)
+        loss_min_params_list.append(loss_min_params)
+    loss_min_tensor = torch.stack(loss_min_params_list)
+    
+    fine_scored_experiment_simulation_output = fine_model.normalizer.score_y(experiment_simulation_output)
+    compare_label_surrogate_simulation(fine_model, loss_min_tensor, fine_scored_experiment_simulation_output, label="result")
