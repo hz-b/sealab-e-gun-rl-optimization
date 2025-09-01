@@ -44,22 +44,22 @@ all_keys = list(limits.keys())
 cont_keys = [k for k in all_keys if k not in int_keys]
 
 # Min and max tensors for continuous keys
-cont_min = torch.tensor([limits[k][0] for k in cont_keys])
-cont_max = torch.tensor([limits[k][1] for k in cont_keys])
 
-def sample(first_sample_id, sample_length):
+def sample(first_sample_id, sample_length, device=torch.device('cpu')):
     samples = []
+    cont_min = torch.tensor([limits[k][0] for k in cont_keys], device=device)
+    cont_max = torch.tensor([limits[k][1] for k in cont_keys], device=device)
 
     for seed in range(first_sample_id, first_sample_id + sample_length):
         torch.manual_seed(seed)
 
         # Sample continuous values
-        rand_cont = torch.rand(len(cont_keys))
+        rand_cont = torch.rand(len(cont_keys), device=device)
         cont_sample = cont_min + (cont_max - cont_min) * rand_cont
 
         # Sample integer value(s)
         while True:
-            gun_field = torch.randint(limits["__Gun_Field__"][0], limits["__Gun_Field__"][1]+1, (1,))
+            gun_field = torch.randint(limits["__Gun_Field__"][0], limits["__Gun_Field__"][1]+1, (1,), device=device)
             if gun_field.item() not in (-21, -23):
                 break
         gun_field = gun_field.float()
@@ -73,7 +73,7 @@ def sample(first_sample_id, sample_length):
         sample_dict["__Gun_Field__"] = gun_field[0]
 
         # Build final ordered tensor sample
-        sample_tensor = torch.tensor([sample_dict[k] for k in all_keys])
+        sample_tensor = torch.tensor([sample_dict[k] for k in all_keys], device=device)
         samples.append(sample_tensor)
 
     return torch.stack(samples)

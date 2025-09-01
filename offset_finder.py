@@ -6,8 +6,7 @@ from evotorch import Problem
 from evotorch.operators import OnePointCrossOver, MultiPointCrossOver, GaussianMutation, SimulatedBinaryCrossOver
 import logging
 from tqdm.auto import tqdm
-from simulation import sim_Y_labels, simulation_parallel
-
+from simulation import sim_Y_labels, simulation_parallel, sample, limits
 
 def generate_configurations(model, fine_model, validity_classifier, max_offset=0.2, offset_count=100, seed=42):
     torch.manual_seed(seed)
@@ -197,6 +196,28 @@ def generate_stacked_configurations(model, fine_model, validity_classifier, offs
 
     return uncompensated_parameters_tensor, final_offsets_tensor, experiment_output_tensor
 
+def sample_offset(size=100, max_offset=0.2, seed=100001, device=torch.device('cpu')):
+    uncompensated_parameters = sample(seed, size, device=device) # (size, 14)
+    lengths = torch.tensor([(i[1]-i[0])  for i in limits.values()], device=uncompensated_parameters.device)
+    torch.manual_seed(seed+1)
+    random_signs = torch.randint(0, 2, uncompensated_parameters.shape, device=uncompensated_parameters.device) * 2 - 1
+    
+    offsets = max_offset * lengths * random_signs * torch.rand_like(uncompensated_parameters)
+    outputs = uncompensated_parameters + offsets
+    outputs[:,4] = torch.round(outputs[:,4])
+    outputs[:, 4] = torch.where(outputs[:, 4] == -23, torch.tensor(-22.0, device=outputs.device), outputs[:, 4])
+    outputs[:, 4] = torch.where(outputs[:, 4] == -21, torch.tensor(-20.0, device=outputs.device), outputs[:, 4])
+    offsets = outputs - uncompensated_parameters
+    return uncompensated_parameters, offsets
+
+def generate_filtered_offsets(model, max_size=1000):
+    uncompensated_parameters, offsets = sample_offset(size=max_size, device=model.device)
+    tensor_sum = uncompensated_parameters + offsets
+    scored_tensor_sum = model.normalizer.score_x(tensor_sum)
+    mask = ((scored_tensor_sum < 0).any(dim=1) | (scored_tensor_sum > 1).any(dim=1))
+    
+    return uncompensated_parameters[~mask], offsets[~mask]
+
 class JointModel():
     def __init__(self, model, fine_model=None, validity_classifier=None):
         super().__init__()
@@ -221,7 +242,7 @@ class JointModel():
 
             with torch.no_grad():
                 fine_model_outputs = self.fine_model(self.fine_model.normalizer.score_x(sample[limit_y_mask]))
-            output[limit_y_mask] = fine_model.normalizer.unscore_y(fine_model_outputs)
+            output[limit_y_mask] = self.fine_model.normalizer.unscore_y(fine_model_outputs)
             
         if self.validity_classifier is not None:
             with torch.no_grad():
@@ -238,11 +259,13 @@ if __name__ == "__main__":
     model = critic.model
     torch.manual_seed(142)
 
+    uncompensated_parameters, offsets = generate_filtered_offsets(model)
+    uncompensated_parameters, offsets = uncompensated_parameters[:100], offsets[:100]
     jm = JointModel(model=model, fine_model=fine_model, validity_classifier=validity_classifier)
-    sample = jm.model.normalizer.unscore_x(torch.rand((100, 14), device=model.device))
-
-    print(jm(sample))
-    sim_output = simulation_parallel(sample.cpu())[:, :4]
+    tensor_sum = uncompensated_parameters + offsets
+    
+    print(jm(tensor_sum))
+    sim_output = simulation_parallel(tensor_sum.cpu())[:, :4]
     print(sim_output)
     torch.save(sim_output, "outputs/simulation_simple_test.pt")
     exit(0)
