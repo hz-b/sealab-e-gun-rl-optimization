@@ -196,13 +196,57 @@ def generate_stacked_configurations(model, fine_model, validity_classifier, offs
     experiment_output_tensor = torch.stack(experiment_output_list)
 
     return uncompensated_parameters_tensor, final_offsets_tensor, experiment_output_tensor
-    
+
+class JointModel():
+    def __init__(self, model, fine_model=None, validity_classifier=None):
+        super().__init__()
+        self.model = model
+        self.fine_model=fine_model
+        self.validity_classifier=validity_classifier
+        self.model.normalizer.to(model.device)
+        self.fine_model.normalizer.to(fine_model.device)
+        
+    def __call__(self, sample, clone=False):
+        model_score_sample = self.model.normalizer.score_x(sample)
+        with torch.no_grad():
+            model_score_output = self.model(model_score_sample)
+
+        output = self.model.normalizer.unscore_y(model_score_output)
+        
+        if clone and (self.fine_model is not None or self.validity_classifier is not None):
+            output = output.clone()
+
+        if self.fine_model is not None:
+            limit_y_mask = (abs(output) < 30).all(dim=1)
+
+            with torch.no_grad():
+                fine_model_outputs = self.fine_model(self.fine_model.normalizer.score_x(sample[limit_y_mask]))
+            output[limit_y_mask] = fine_model.normalizer.unscore_y(fine_model_outputs)
+            
+        if self.validity_classifier is not None:
+            with torch.no_grad():
+                validity_scores = self.validity_classifier(sample)
+            validity = (validity_scores > 0.5).squeeze(-1)
+            output[~validity] = torch.nan
+        
+        return output
+
 if __name__ == "__main__":
     critic = Critic()
     validity_classifier = critic.validity_classifier
     fine_model = critic.fine_surrogate
     model = critic.model
+    torch.manual_seed(142)
 
+    jm = JointModel(model=model, fine_model=fine_model, validity_classifier=validity_classifier)
+    sample = jm.model.normalizer.unscore_x(torch.rand((100, 14), device=model.device))
+
+    print(jm(sample))
+    sim_output = simulation_parallel(sample.cpu())[:, :4]
+    print(sim_output)
+    torch.save(sim_output, "outputs/simulation_simple_test.pt")
+    exit(0)
+    
     #rmse, std, nan_count = rmse_simulated_target_compensated(critic.model, critic.fine_surrogate, critic.validity_classifier, sample_count=2)
     #print("RMSE:", rmse, "Std:", std, "NaN#", nan_count)
     uncompensated_parameters, final_offsets, experiment_output = generate_stacked_configurations(model, fine_model, validity_classifier, num_iterations=200, offset_count=100000)
