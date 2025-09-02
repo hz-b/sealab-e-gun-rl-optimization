@@ -283,4 +283,4 @@ if __name__ == "__main__":
         loss_min_params_list.append(loss_min_params)
     loss_min_params_tensor = torch.stack(loss_min_params_list)
     print("Target", sim_output)
-    print("Compensated", simulation_parallel(model.normalizer.unscore_x(loss_min_params_tensor.clone()).cpu())[:, 4])
+    print("Compensated", simulation_parallel(model.normalizer.unscore_x(loss_min_params_tensor.clone()).cpu())[:, :4])
