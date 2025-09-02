@@ -25,4 +25,4 @@ for i in tqdm(ds, leave=False):
     solution_vector_list.append(solution_vector[0])
 solution_tensor = torch.stack(solution_vector_list)
 
-simulation_parallel(solution_tensor.cpu())[:, :4]
+print(simulation_parallel(solution_tensor.cpu())[:, :4])
