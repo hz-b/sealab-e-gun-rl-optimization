@@ -130,7 +130,7 @@ def eval_evotorch_GA(state, niter, popsize=200, stdev=0.01, tournament_size=64, 
             init_problem = state.repeat_interleave(x.shape[0], dim=0)
         else:
             init_problem = init_problem_one
-        output = critic_net(x, init_problem, clamping=False, penalize_forbidden_actions=True)
+        output = critic_net(x.clone(), init_problem, clamping=False, penalize_forbidden_actions=True)
         scalar = output.mean(dim=1)
         optimization_values.append(output)
         callback_times.append(time.time())
@@ -171,7 +171,7 @@ def eval_evotorch_GA(state, niter, popsize=200, stdev=0.01, tournament_size=64, 
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return output[torch.arange(niter), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    return output[torch.arange(niter), best_indices], best_solution, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
     
 def eval_scipy_annealing(state, niter, device=torch.device('cpu'), visit=2.62, accept=-5, initial_temp=5230.0):
     state = state.to(device)
@@ -521,7 +521,7 @@ def plot_evaluation_accuracy(outputs, network_outputs):
     plt.rcParams.update({'font.size': 20})
     ax_list = []
     
-    for i, (key, (value, _)) in enumerate(outputs.items()):
+    for i, (key, (value, _, _)) in enumerate(outputs.items()):
         ax = fig.add_subplot(1,len(outputs),i+1)
         ax_list.append(ax)
         ax.set_title(key)
@@ -705,10 +705,10 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
         network_times_list.append(elapsed_time)
         
         outputs = {
-            "Powell’s Method": eval_scipy("Powell", state, niter),
-            "Simulated Annealing": eval_scipy_annealing(state, niter),
-            "Gradient Descent": eval_torch_sgd(state, niter),
-            "TPE": eval_optuna(state, niter),
+            #"Powell’s Method": eval_scipy("Powell", state, niter),
+            #"Simulated Annealing": eval_scipy_annealing(state, niter),
+            #"Gradient Descent": eval_torch_sgd(state, niter),
+            #"TPE": eval_optuna(state, niter),
             "GA": eval_evotorch_GA(state, niter)
         }
         outputs_list.append(outputs)
