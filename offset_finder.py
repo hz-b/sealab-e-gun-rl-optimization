@@ -46,13 +46,16 @@ def generate_configurations(model, fine_model, validity_classifier, max_offset=0
 
 def optimize_evotorch_ga(
     model, validity_classifier, observed_experiment, uncompensated_parameters, fine_model=None, iterations=1000, 
-    num_candidates=100, tournament_size=1, mutation_rate=0.05, mutation_scale=0.05, crossover_rate=0.5, eta=None, crossover_points=10, seed=42
+    num_candidates=200, tournament_size=1, mutation_rate=0.05, mutation_scale=0.05, crossover_rate=0.5, eta=None, crossover_points=10, seed=42
     ):
     torch.manual_seed(seed)
     # Define the loss function
     def loss(x: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
             tensor_sum = x + uncompensated_parameters ###model.rescale_offset(x) → model
+            tensor_sum = tensor_sum.clone()
+            tensor_sum = JointModel.prepare_sample(model.normalizer.unscore_x(tensor_sum)) # set integer value to allowed values
+            tensor_sum = model.normalizer.score_x(tensor_sum)
             compensated_rays = model(tensor_sum)
             y = model.normalizer.unscore_y(compensated_rays)
             if fine_model is not None:
@@ -226,8 +229,15 @@ class JointModel():
         self.validity_classifier=validity_classifier
         self.model.normalizer.to(model.device)
         self.fine_model.normalizer.to(fine_model.device)
+    @staticmethod
+    def prepare_sample(sample):
+        sample[:,4] = torch.round(sample[:,4])
+        sample[:, 4] = torch.where(sample[:, 4] == -23, torch.tensor(-22.0, device=sample.device), sample[:, 4])
+        sample[:, 4] = torch.where(sample[:, 4] == -21, torch.tensor(-20.0, device=sample.device), sample[:, 4])
+        return sample
         
     def __call__(self, sample, clone=False):
+        sample = JointModel.prepare_sample(sample)
         model_score_sample = self.model.normalizer.score_x(sample)
         with torch.no_grad():
             model_score_output = self.model(model_score_sample)
@@ -259,29 +269,18 @@ if __name__ == "__main__":
     model = critic.model
     torch.manual_seed(142)
 
-    uncompensated_parameters, offsets = generate_filtered_offsets(model)
+     uncompensated_parameters, offsets = generate_filtered_offsets(model)
     uncompensated_parameters, offsets = uncompensated_parameters[:100], offsets[:100]
     jm = JointModel(model=model, fine_model=fine_model, validity_classifier=validity_classifier)
+
     tensor_sum = uncompensated_parameters + offsets
     
-    print(jm(tensor_sum))
+    #sim_output = jm(tensor_sum)
     sim_output = simulation_parallel(tensor_sum.cpu())[:, :4]
-    print(sim_output)
-    torch.save(sim_output, "outputs/simulation_simple_test.pt")
-    exit(0)
-    
-    #rmse, std, nan_count = rmse_simulated_target_compensated(critic.model, critic.fine_surrogate, critic.validity_classifier, sample_count=2)
-    #print("RMSE:", rmse, "Std:", std, "NaN#", nan_count)
-    uncompensated_parameters, final_offsets, experiment_output = generate_stacked_configurations(model, fine_model, validity_classifier, num_iterations=200, offset_count=100000)
-    experiment_simulation_output = compare_label_surrogate_simulation(fine_model, uncompensated_parameters+final_offsets, experiment_output, label="blueprint")
-    scored_experiment_simulation_output = model.normalizer.score_y(experiment_simulation_output)
-    mask = ~torch.isnan(experiment_simulation_output).any(dim=1) & ~(torch.abs(experiment_simulation_output)>30).any(dim=1)
-
     loss_min_params_list = []
-    for i, entry in enumerate(scored_experiment_simulation_output[mask]):
-        loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, entry, uncompensated_parameters[mask][i], fine_model)
+    for i, entry in enumerate(sim_output):
+        loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, model.normalizer.score_y(entry.unsqueeze(0)), model.normalizer.score_x(uncompensated_parameters[i]), fine_model=fine_model)
         loss_min_params_list.append(loss_min_params)
-    loss_min_tensor = torch.stack(loss_min_params_list)
-    
-    fine_scored_experiment_simulation_output = fine_model.normalizer.score_y(experiment_simulation_output[mask])
-    compare_label_surrogate_simulation(fine_model, loss_min_tensor, fine_scored_experiment_simulation_output, label="result")
+    loss_min_params_tensor = torch.stack(loss_min_params_list)
+    print("Target", sim_output)
+    print("Compensated", simulation_parallel(model.normalizer.unscore_x(loss_min_params_tensor.clone()).cpu())[:, 4])
