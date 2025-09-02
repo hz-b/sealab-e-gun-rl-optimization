@@ -57,12 +57,15 @@ class Critic:
 
     def compute_integrated_reward(self, expanded_actions, expanded_states, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False):
         merged_input = torch.cat([expanded_states, expanded_actions], dim=1)
-        output = self.model(merged_input)
+        unscored_merged_input = self.model.normalizer.unscore_x(merged_input)
+        prepared_input = self.model.normalizer.score_x(JointModel.prepare_sample(unscored_merged_input))
+        output = self.model(prepared_input)
+
         if hasattr(self, "fine_surrogate"):
             limit_y_mask = (abs(self.model.normalizer.unscore_y(output)) <30).all(-1).squeeze(-1)  # shape: (N,)
             #print(limit_y_mask.shape)
-            fine_model_outputs = self.fine_surrogate(merged_input[limit_y_mask])
-            rescored_fine_model_outputs = self.model.normalizer.unscore_y(self.fine_surrogate.normalizer.unscore_y(fine_model_outputs))
+            fine_model_outputs = self.fine_surrogate(prepared_input[limit_y_mask])
+            rescored_fine_model_outputs = self.model.normalizer.score_y(self.fine_surrogate.normalizer.unscore_y(fine_model_outputs))
             output = output.clone()
             output[limit_y_mask] = rescored_fine_model_outputs
         reward =  self.calculate_reward(output, norm=norm)
@@ -74,7 +77,7 @@ class Critic:
             return reward_copy
 
         if penalize_invalid:
-            validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(merged_input))
+            validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(prepared_input))
             validity = (validity_scores > 0.5).squeeze(-1)
             reward_copy = reward.clone()
             reward_copy[~validity] = 1000.
@@ -115,3 +118,45 @@ class Critic:
         # Aggregate
         rewards_mean = rewards.mean(dim=1)  # (batch_size, 3)
         return rewards_mean
+        
+
+class JointModel():
+    def __init__(self, model, fine_model=None, validity_classifier=None):
+        super().__init__()
+        self.model = model
+        self.fine_model=fine_model
+        self.validity_classifier=validity_classifier
+        self.model.normalizer.to(model.device)
+        self.fine_model.normalizer.to(fine_model.device)
+    @staticmethod
+    def prepare_sample(sample):
+        sample[:,4] = torch.round(sample[:,4])
+        sample[:, 4] = torch.where(sample[:, 4] == -23, torch.tensor(-22.0, device=sample.device), sample[:, 4])
+        sample[:, 4] = torch.where(sample[:, 4] == -21, torch.tensor(-20.0, device=sample.device), sample[:, 4])
+        return sample
+        
+    def __call__(self, sample, clone=False):
+        sample = JointModel.prepare_sample(sample)
+        model_score_sample = self.model.normalizer.score_x(sample)
+        with torch.no_grad():
+            model_score_output = self.model(model_score_sample)
+
+        output = self.model.normalizer.unscore_y(model_score_output)
+        
+        if clone and (self.fine_model is not None or self.validity_classifier is not None):
+            output = output.clone()
+
+        if self.fine_model is not None:
+            limit_y_mask = (abs(output) < 30).all(dim=1)
+
+            with torch.no_grad():
+                fine_model_outputs = self.fine_model(self.fine_model.normalizer.score_x(sample[limit_y_mask]))
+            output[limit_y_mask] = self.fine_model.normalizer.unscore_y(fine_model_outputs)
+            
+        if self.validity_classifier is not None:
+            with torch.no_grad():
+                validity_scores = self.validity_classifier(sample)
+            validity = (validity_scores > 0.5).squeeze(-1)
+            output[~validity] = torch.nan
+        
+        return output

@@ -1,6 +1,6 @@
 from surrogate import BerlinPro2
 import torch
-from critic import Critic
+from critic import Critic, JointModel
 from evotorch.algorithms import SNES, CMAES, GeneticAlgorithm
 from evotorch import Problem
 from evotorch.operators import OnePointCrossOver, MultiPointCrossOver, GaussianMutation, SimulatedBinaryCrossOver
@@ -221,46 +221,7 @@ def generate_filtered_offsets(model, max_size=1000):
     
     return uncompensated_parameters[~mask], offsets[~mask]
 
-class JointModel():
-    def __init__(self, model, fine_model=None, validity_classifier=None):
-        super().__init__()
-        self.model = model
-        self.fine_model=fine_model
-        self.validity_classifier=validity_classifier
-        self.model.normalizer.to(model.device)
-        self.fine_model.normalizer.to(fine_model.device)
-    @staticmethod
-    def prepare_sample(sample):
-        sample[:,4] = torch.round(sample[:,4])
-        sample[:, 4] = torch.where(sample[:, 4] == -23, torch.tensor(-22.0, device=sample.device), sample[:, 4])
-        sample[:, 4] = torch.where(sample[:, 4] == -21, torch.tensor(-20.0, device=sample.device), sample[:, 4])
-        return sample
-        
-    def __call__(self, sample, clone=False):
-        sample = JointModel.prepare_sample(sample)
-        model_score_sample = self.model.normalizer.score_x(sample)
-        with torch.no_grad():
-            model_score_output = self.model(model_score_sample)
 
-        output = self.model.normalizer.unscore_y(model_score_output)
-        
-        if clone and (self.fine_model is not None or self.validity_classifier is not None):
-            output = output.clone()
-
-        if self.fine_model is not None:
-            limit_y_mask = (abs(output) < 30).all(dim=1)
-
-            with torch.no_grad():
-                fine_model_outputs = self.fine_model(self.fine_model.normalizer.score_x(sample[limit_y_mask]))
-            output[limit_y_mask] = self.fine_model.normalizer.unscore_y(fine_model_outputs)
-            
-        if self.validity_classifier is not None:
-            with torch.no_grad():
-                validity_scores = self.validity_classifier(sample)
-            validity = (validity_scores > 0.5).squeeze(-1)
-            output[~validity] = torch.nan
-        
-        return output
 
 if __name__ == "__main__":
     critic = Critic()
