@@ -231,17 +231,19 @@ if __name__ == "__main__":
     torch.manual_seed(142)
 
     uncompensated_parameters, offsets = generate_filtered_offsets(model)
-    uncompensated_parameters, offsets = uncompensated_parameters[:100], offsets[:100]
+    uncompensated_parameters, offsets = uncompensated_parameters[:2], offsets[:2]
     jm = JointModel(model=model, fine_model=fine_model, validity_classifier=validity_classifier)
 
     tensor_sum = uncompensated_parameters + offsets
     
     #sim_output = jm(tensor_sum)
     sim_output = simulation_parallel(tensor_sum.cpu())[:, :4]
+    print("Target", sim_output)
+    
     loss_min_params_list = []
     for i, entry in enumerate(sim_output):
         loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, model.normalizer.score_y(entry.unsqueeze(0).to(model.device)), model.normalizer.score_x(uncompensated_parameters[i]), fine_model=fine_model)
         loss_min_params_list.append(loss_min_params)
     loss_min_params_tensor = torch.stack(loss_min_params_list)
-    print("Target", sim_output)
+    
     print("Compensated", simulation_parallel(model.normalizer.unscore_x(loss_min_params_tensor.clone()).cpu())[:, :4])
