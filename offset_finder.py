@@ -279,7 +279,7 @@ if __name__ == "__main__":
     sim_output = simulation_parallel(tensor_sum.cpu())[:, :4]
     loss_min_params_list = []
     for i, entry in enumerate(sim_output):
-        loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, model.normalizer.score_y(entry.unsqueeze(0)), model.normalizer.score_x(uncompensated_parameters[i]), fine_model=fine_model)
+        loss_min_params, _, _ = optimize_evotorch_ga(model, validity_classifier, model.normalizer.score_y(entry.unsqueeze(0).to(model.device)), model.normalizer.score_x(uncompensated_parameters[i]), fine_model=fine_model)
         loss_min_params_list.append(loss_min_params)
     loss_min_params_tensor = torch.stack(loss_min_params_list)
     print("Target", sim_output)
