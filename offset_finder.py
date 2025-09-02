@@ -269,7 +269,7 @@ if __name__ == "__main__":
     model = critic.model
     torch.manual_seed(142)
 
-     uncompensated_parameters, offsets = generate_filtered_offsets(model)
+    uncompensated_parameters, offsets = generate_filtered_offsets(model)
     uncompensated_parameters, offsets = uncompensated_parameters[:100], offsets[:100]
     jm = JointModel(model=model, fine_model=fine_model, validity_classifier=validity_classifier)
 
