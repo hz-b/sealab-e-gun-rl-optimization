@@ -6,8 +6,6 @@ from torch.utils.data import DataLoader, Dataset
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 from surrogate import H5Dataset
-#from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
         
 class ValidityClassifier(pl.LightningModule):
     def __init__(self, hparams):
@@ -22,10 +20,10 @@ class ValidityClassifier(pl.LightningModule):
             nn.ReLU(),
             nn.BatchNorm1d(64),
             nn.Linear(64, 1),
-            nn.Sigmoid()
+            #nn.Sigmoid()
         )
 
-        self.loss_fn = nn.BCELoss()
+        self.loss_fn = nn.BCEWithLogitsLoss()
 
     def forward(self, x):
         return self.model(x)
@@ -38,9 +36,6 @@ class ValidityClassifier(pl.LightningModule):
         self.log("train_loss", loss)
         return loss
 
-    def on_validation_epoch_start(self):
-        self._val_outputs = []  # reset buffer
-
     def validation_step(self, batch, batch_idx):
         x, y = batch
         pred = self(x)
@@ -50,54 +45,15 @@ class ValidityClassifier(pl.LightningModule):
         self.log("val_loss", loss, on_epoch=True, prog_bar=True)
         self.log("val_acc", acc, on_epoch=True, prog_bar=True)
 
-        # Store output manually
-        self._val_outputs.append({
-            'x': x.detach().cpu(),
-            'pred': pred.detach().cpu(),
-            'label': y.detach().cpu()
-        })
-
-    def on_validation_epoch_end(self):
-        if not hasattr(self, "_val_outputs") or len(self._val_outputs) == 0:
-            return
-
-        limit = 1000
-        all_x = torch.cat([o['x'] for o in self._val_outputs], dim=0)[:limit]
-        all_preds = torch.cat([o['pred'] for o in self._val_outputs], dim=0)[:limit]
-        all_labels = torch.cat([o['label'] for o in self._val_outputs], dim=0)[:limit]
-
-        pred_labels = (all_preds > 0.5).float()
-        correct_mask = (pred_labels == all_labels).squeeze(-1)
-        incorrect_mask = ~correct_mask
-
-        test_mask = (all_labels == 1.).squeeze(-1)
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        pred = self(x)
+        y = y.unsqueeze(-1)
+        loss = self.loss_fn(pred, y)
+        acc = ((pred > 0.5) == y.bool()).float().mean()
+        self.log("test_loss", loss, on_epoch=True, prog_bar=True)
+        self.log("test_acc", acc, on_epoch=True, prog_bar=True)
         
-        #x = all_x.numpy()
-        #tsne = TSNE(n_components=2, perplexity=30, random_state=42)
-        #x_tsne = tsne.fit_transform(x)
-
-        #plt.figure(figsize=(8, 6))
-        #plt.scatter(x_tsne[correct_mask, 0], x_tsne[correct_mask, 1],
-        #            c='green', label='Correct', alpha=0.5, s=10)
-        #plt.scatter(x_tsne[incorrect_mask, 0], x_tsne[incorrect_mask, 1],
-        #            c='red', label='Incorrect', alpha=0.5, s=10)
-        #plt.title("t-SNE of Validation Set: Correct vs Incorrect Predictions")
-        #plt.legend()
-        #plt.grid(True)
-        #path = os.path.join(self.logger.save_dir, "berlinpro_validity", self.logger.experiment.id)
-        #os.makedirs(path, exist_ok=True)
-        #fig_path = os.path.join(path, "val_tsne_correct_incorrect.png")
-        #plt.savefig(fig_path)
-        #plt.close()
-
-        #if isinstance(self.logger, WandbLogger):
-        #    import wandb
-        #    self.logger.experiment.log({"val_tsne_scatter": wandb.Image(fig_path)})
-
-        # Clear buffer
-        self._val_outputs.clear()
-
-
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
     
@@ -107,6 +63,9 @@ class ValidityClassifier(pl.LightningModule):
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.hparams.batch_size)
 
+    def test_dataloader(self):
+        return DataLoader(self.test_dataset, batch_size=self.hparams.batch_size)
+        
     def prepare_data(self):
         full_dataset = H5Dataset(self.hparams.data_path, raw=True)
         
@@ -124,11 +83,11 @@ class ValidityClassifier(pl.LightningModule):
             def __getitem__(self, idx):
                 return self.x[idx], self.labels[idx]
 
-        dataset = ValidityDataset(full_dataset.x_norm, validity)
-        train_size = int(0.7 * len(dataset))
-        val_size = len(dataset) - train_size
-
-        self.train_dataset, self.val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+        dataset = ValidityDataset(full_dataset.x_norm, validity)       
+        train_size = int(0.6 * len(dataset))
+        val_size = int(0.2 * len(dataset))
+        test_size = len(dataset) - (train_size + val_size)
+        self.train_dataset, self.val_dataset, self.test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -161,3 +120,4 @@ if __name__ == '__main__':
     )
 
     trainer.fit(model)
+    trainer.test(ckpt_path='best')
