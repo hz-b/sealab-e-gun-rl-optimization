@@ -65,8 +65,7 @@ class ValidityClassifier(pl.LightningModule):
                 mode='min',
                 factor=self.hparams.lr_factor,
                 patience=self.hparams.lr_patience,
-                min_lr=self.hparams.min_lr,
-                verbose=True
+                min_lr=self.hparams.min_lr
             ),
             'monitor': 'val_loss',
             'interval': 'epoch',
