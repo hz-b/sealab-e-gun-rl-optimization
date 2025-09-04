@@ -6,22 +6,14 @@ from torch.utils.data import DataLoader, Dataset
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 from surrogate import H5Dataset
+from model_helpers import create_sequential
 
 class ValidityClassifier(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
 
-        self.model = nn.Sequential(
-            nn.Linear(14, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.BatchNorm1d(64),
-            nn.Linear(64, 1),
-            # nn.Sigmoid()  # Do not use with BCEWithLogitsLoss
-        )
+        self.model = create_sequential(14, 1, self.hparams.layer_size, blow = self.hparams.blow_to/14, shrink_factor="log")
 
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.test_losses = []
@@ -126,14 +118,18 @@ class ValidityClassifier(pl.LightningModule):
         parser.add_argument('name', type=str)
         parser.add_argument('--batch_size', type=int, default=1024)
         parser.add_argument('--learning_rate', type=float, default=1e-3)
+        parser.add_argument('--layer_size', type=int, default=3)
+        parser.add_argument('--blow_to', type=int, default=256)
+        parser.add_argument('--shrink_factor', type=str, default='log')
         parser.add_argument('--data_path', type=str, default='datasets/bbp_ds_10m_merged.h5')
         parser.add_argument('--max_epochs', type=int, default=500)
         parser.add_argument('--output_dir', type=str, default='outputs')
+        parser.add_argument('--upscale_exp', type=int, default=7)
         parser.add_argument('--gpus', type=int, default=1)
 
         # Scheduler-specific args
         parser.add_argument('--lr_patience', type=int, default=5, help='Patience for LR scheduler')
-        parser.add_argument('--lr_factor', type=float, default=0.5, help='Factor by which the LR will be reduced')
+        parser.add_argument('--lr_factor', type=float, default=0.95, help='Factor by which the LR will be reduced')
         parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum LR')
 
         return parser
