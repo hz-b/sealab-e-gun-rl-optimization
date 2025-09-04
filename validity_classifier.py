@@ -24,6 +24,8 @@ class ValidityClassifier(pl.LightningModule):
         )
 
         self.loss_fn = nn.BCEWithLogitsLoss()
+        self.test_losses = []
+        self.test_accs = []
 
     def forward(self, x):
         return self.model(x)
@@ -53,9 +55,19 @@ class ValidityClassifier(pl.LightningModule):
         y = y.unsqueeze(-1)
         loss = self.loss_fn(pred, y)
         acc = ((pred > 0.5) == y.bool()).float().mean()
+        self.test_losses.append(loss.item())
+        self.test_accs.append(acc.item())
         self.log("test_loss", loss, on_epoch=True, prog_bar=True)
         self.log("test_acc", acc, on_epoch=True, prog_bar=True)
 
+    def on_test_epoch_end(self):
+        losses = torch.tensor(self.test_losses)
+        std_loss = torch.std(losses)
+        self.log('test_loss_std', std_loss)
+        accs = torch.tensor(self.test_accs)
+        std_accs = torch.std(accs)
+        self.log('test_acc_std', std_accs)
+        
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
@@ -115,7 +127,7 @@ class ValidityClassifier(pl.LightningModule):
         parser.add_argument('--batch_size', type=int, default=1024)
         parser.add_argument('--learning_rate', type=float, default=1e-3)
         parser.add_argument('--data_path', type=str, default='datasets/bbp_ds_10m_merged.h5')
-        parser.add_argument('--max_epochs', type=int, default=100)
+        parser.add_argument('--max_epochs', type=int, default=500)
         parser.add_argument('--output_dir', type=str, default='outputs')
         parser.add_argument('--gpus', type=int, default=1)
 
@@ -150,5 +162,5 @@ if __name__ == '__main__':
     )
 
     trainer.fit(model)
-    trainer.test(ckpt_path='best')
+    trainer.test(ckpt_path='last')
 
