@@ -6,21 +6,21 @@ from torch.utils.data import DataLoader, Dataset
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 from surrogate import H5Dataset
-        
+
 class ValidityClassifier(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
 
         self.model = nn.Sequential(
-            nn.Linear(14, 64),
+            nn.Linear(14, 128),
             nn.ReLU(),
-            nn.BatchNorm1d(64),
-            nn.Linear(64, 64),
+            nn.BatchNorm1d(128),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.BatchNorm1d(64),
             nn.Linear(64, 1),
-            #nn.Sigmoid()
+            # nn.Sigmoid()  # Do not use with BCEWithLogitsLoss
         )
 
         self.loss_fn = nn.BCEWithLogitsLoss()
@@ -44,6 +44,8 @@ class ValidityClassifier(pl.LightningModule):
         acc = ((pred > 0.5) == y.bool()).float().mean()
         self.log("val_loss", loss, on_epoch=True, prog_bar=True)
         self.log("val_acc", acc, on_epoch=True, prog_bar=True)
+        self.log("lr", self.trainer.optimizers[0].param_groups[0]["lr"], prog_bar=True)
+        return loss
 
     def test_step(self, batch, batch_idx):
         x, y = batch
@@ -53,10 +55,26 @@ class ValidityClassifier(pl.LightningModule):
         acc = ((pred > 0.5) == y.bool()).float().mean()
         self.log("test_loss", loss, on_epoch=True, prog_bar=True)
         self.log("test_acc", acc, on_epoch=True, prog_bar=True)
-        
+
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
-    
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+
+        scheduler = {
+            'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode='min',
+                factor=self.hparams.lr_factor,
+                patience=self.hparams.lr_patience,
+                min_lr=self.hparams.min_lr,
+                verbose=True
+            ),
+            'monitor': 'val_loss',
+            'interval': 'epoch',
+            'frequency': 1
+        }
+
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.hparams.batch_size, shuffle=True)
 
@@ -65,10 +83,10 @@ class ValidityClassifier(pl.LightningModule):
 
     def test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=self.hparams.batch_size)
-        
+
     def prepare_data(self):
         full_dataset = H5Dataset(self.hparams.data_path, raw=True)
-        
+
         isnan_mask = torch.isnan(full_dataset.y_norm[:, :4]).any(dim=1)
         validity = (~isnan_mask).float()
 
@@ -83,11 +101,13 @@ class ValidityClassifier(pl.LightningModule):
             def __getitem__(self, idx):
                 return self.x[idx], self.labels[idx]
 
-        dataset = ValidityDataset(full_dataset.x_norm, validity)       
+        dataset = ValidityDataset(full_dataset.x_norm, validity)
         train_size = int(0.6 * len(dataset))
         val_size = int(0.2 * len(dataset))
         test_size = len(dataset) - (train_size + val_size)
-        self.train_dataset, self.val_dataset, self.test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
+        self.train_dataset, self.val_dataset, self.test_dataset = torch.utils.data.random_split(
+            dataset, [train_size, val_size, test_size]
+        )
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -97,8 +117,14 @@ class ValidityClassifier(pl.LightningModule):
         parser.add_argument('--learning_rate', type=float, default=1e-3)
         parser.add_argument('--data_path', type=str, default='datasets/bbp_ds_10m_merged.h5')
         parser.add_argument('--max_epochs', type=int, default=100)
-        parser.add_argument('--output_dir', default='outputs', type=str)
+        parser.add_argument('--output_dir', type=str, default='outputs')
         parser.add_argument('--gpus', type=int, default=1)
+
+        # Scheduler-specific args
+        parser.add_argument('--lr_patience', type=int, default=5, help='Patience for LR scheduler')
+        parser.add_argument('--lr_factor', type=float, default=0.5, help='Factor by which the LR will be reduced')
+        parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum LR')
+
         return parser
 
 if __name__ == '__main__':
@@ -109,7 +135,12 @@ if __name__ == '__main__':
     hparams = parser.parse_args()
 
     model = ValidityClassifier(hparams)
-    wandb_logger = WandbLogger(name=model.hparams.name, project="berlinpro_validity", save_dir=os.path.join(model.hparams.output_dir, "berlinpro_validity"))
+
+    wandb_logger = WandbLogger(
+        name=model.hparams.name,
+        project="berlinpro_validity",
+        save_dir=os.path.join(model.hparams.output_dir, "berlinpro_validity")
+    )
 
     trainer = pl.Trainer(
         logger=wandb_logger,
@@ -121,3 +152,4 @@ if __name__ == '__main__':
 
     trainer.fit(model)
     trainer.test(ckpt_path='best')
+
