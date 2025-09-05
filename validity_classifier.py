@@ -92,6 +92,7 @@ class ValidityClassifier(pl.LightningModule):
 
         isnan_mask = torch.isnan(full_dataset.y_norm[:, :4]).any(dim=1)
         validity = (~isnan_mask).float()
+        print( validity.sum().item(), "/", len(full_dataset), "data points are valid.")
 
         class ValidityDataset(Dataset):
             def __init__(self, x, labels):
@@ -121,7 +122,7 @@ class ValidityClassifier(pl.LightningModule):
         parser.add_argument('--layer_size', type=int, default=3)
         parser.add_argument('--blow_to', type=int, default=256)
         parser.add_argument('--shrink_factor', type=str, default='log')
-        parser.add_argument('--data_path', type=str, default='datasets/bbp_ds_10m_merged.h5')
+        parser.add_argument('--data_path', type=str, default='datasets/bbp_ds_2m_merged_v2.h5')
         parser.add_argument('--max_epochs', type=int, default=500)
         parser.add_argument('--output_dir', type=str, default='outputs')
         parser.add_argument('--upscale_exp', type=int, default=7)
