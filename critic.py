@@ -2,6 +2,7 @@ import torch
 import os
 from validity_classifier import ValidityClassifier
 from surrogate import BerlinPro2, H5Dataset
+from random_forest import RandomForest
 
 class Critic:
     def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/7w2za3qa/checkpoints/epoch=9999-step=3650000.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/2ulcfpww/checkpoints/epoch=49-step=18200.ckpt', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/q2hke2pp/checkpoints/epoch=9999-step=2530000.ckpt', device=None, grid_resolution=20):
@@ -9,11 +10,12 @@ class Critic:
         self.model.freeze()
         self.model.eval()
         if validity_classifier is not None:
-            self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
-            self.validity_classifier.freeze()
-            self.validity_classifier.eval()
-            if device is not None:
-                self.validity_classifier = self.validity_classifier.to(device)
+            #self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
+            #self.validity_classifier.freeze()
+            #self.validity_classifier.eval()
+            #if device is not None:
+            #    self.validity_classifier = self.validity_classifier.to(device)
+            self.validity_classifier = RandomForest("outputs/random_forest_model.joblib")
         if fine_surrogate is not None:
             self.fine_surrogate =  BerlinPro2.load_from_checkpoint(fine_surrogate, map_location=self.model.device)
             self.fine_surrogate.freeze()
@@ -63,7 +65,6 @@ class Critic:
 
         if hasattr(self, "fine_surrogate"):
             limit_y_mask = (abs(self.model.normalizer.unscore_y(output)) <30).all(-1).squeeze(-1)  # shape: (N,)
-            #print(limit_y_mask.shape)
             fine_model_outputs = self.fine_surrogate(prepared_input[limit_y_mask])
             rescored_fine_model_outputs = self.model.normalizer.score_y(self.fine_surrogate.normalizer.unscore_y(fine_model_outputs))
             output = output.clone()
