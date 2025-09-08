@@ -95,8 +95,8 @@ def multi_param_sweep(data_path, param_grid, base_params=None, num_runs=3, num_b
             "verbosity": 0,
             "max_depth": 8,
             "eta": 0.1,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
+            "subsample": 1.0,
+            "colsample_bytree": 1.0,
             "scale_pos_weight": 0.5,
         }
 
@@ -162,8 +162,8 @@ if __name__ == "__main__":
     data_path = "datasets/bbp_ds_2m_merged_v2.h5"
 
     param_grid = {
-        "max_depth": [4, 6, 8],
-        "eta": [0.01], 0.1, 0.3],
+        "max_depth": [4, 6, 8, 10],
+        "eta": [0.01, 0.1, 0.3, 0.5],
         "subsample": [0.6, 0.8, 1.0],
         "cosample_bytree": [0.6, 0.8, 1.0],
     }
@@ -172,7 +172,7 @@ if __name__ == "__main__":
         data_path=data_path,
         param_grid=param_grid,
         num_runs=3,
-        num_boost_round=500,
+        num_boost_round=20000,
         threshold=0.5
     )
 
