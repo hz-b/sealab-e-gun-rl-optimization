@@ -56,9 +56,39 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/"):
 
 
 
-
+def eval_model_paths(model_dict):
+    model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_surrogate/berlinpro_surrogate", model_class=BerlinPro2)
+        result_dict = {}
+        for key, item in model_dict.items():
+            trainer = lightning.Trainer()
+            result_dict[key] = trainer.test(item)
+        
+        print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse/"))
+        
+        print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse_<_30/"))
+    
 if __name__ == "__main__":
-    model_paths = {
+    coarse_model_paths = {
+        "Reference": "itjvgcf9",
+        "decay_95": "abpmsgcz",
+        "decay_99": "8izpysj6",
+        "decay_9": "rqmh11bb",
+        "patience_1000": "q9wf54fi",
+        "patience_500": "3vme6uaf",
+        "bs_1024": "phe9bmtn",
+        "bs_512": "fe726nbo",
+        "lr1e-5": "6kqms9m0",
+        "lr1e-4": "5dcl96iu",
+        "layers_3": "qqff5fih",
+        "layers_15": "f13x79r4",
+        "layers_10": "t1067zfd",
+        "blow_100": "sqerbdb5",
+        "blow_200": "tzy028j4",
+        "shrink_lin": "jt6b67yb",
+         }
+    eval_model_paths(coarse_model_paths)
+         
+    fine_model_paths = {
         "Reference": "3yh6g4h0",
         "decay_95": "bf38qw38",
         "decay_99": "a4zsln77",
@@ -77,13 +107,5 @@ if __name__ == "__main__":
         "blow_200": "v0pu6pr7",
         "shrink_lin": "kc0sg1nl",
          }
-         
-    model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_surrogate/berlinpro_surrogate", model_class=BerlinPro2)
-    result_dict = {}
-    for key, item in model_dict.items():
-        trainer = lightning.Trainer()
-        result_dict[key] = trainer.test(item)
+    eval_model_paths(fine_model_paths)
     
-    print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse/"))
-    
-    print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse_<_30/"))
