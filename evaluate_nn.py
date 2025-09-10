@@ -9,7 +9,7 @@ import re
 from critic import Critic
 from model import RandomDataModule, RandomModel
 
-def get_checkpoint_path(identifier, prefix="outputs/berlinpro_decision_model", suffix="checkpoints"):
+def get_checkpoint_path(identifier, prefix, suffix="checkpoints"):
     """
     Get the checkpoint file path with the highest step for a given identifier.
     
@@ -74,12 +74,12 @@ def statistics(result_dict, reference_key="ref"):
          std_dev = torch.std(diff)
     return statistics_dict
 
-def model_paths_to_model_dict(model_paths):
+def model_paths_to_model_dict(model_paths, prefix=None, model_class=RandomModel):
     models_dict = {}
     for key, identifier in model_paths.items():
         print(key)
-        path = get_checkpoint_path(identifier)
-        models_dict[key] = RandomModel.load_from_checkpoint(
+        path = get_checkpoint_path(identifier, prefix=prefix)
+        models_dict[key] = model_class.load_from_checkpoint(
         checkpoint_path=path,
         map_location=None,
         )
@@ -202,7 +202,7 @@ if __name__ == "__main__":
         "Plat_5": "vv4ng2p2",
          }
     
-    model_dict = model_paths_to_model_dict(model_paths)
+    model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_decision_model")
     result_dict = evaluate_model_dict_to_result_dict(model_dict)
     
     with open("outputs/result_dict.pkl", "wb") as f:
