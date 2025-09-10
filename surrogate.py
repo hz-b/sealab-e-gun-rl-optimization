@@ -67,6 +67,9 @@ class BerlinPro2(pl.LightningModule):
         self.val_x = []
         self.val_y = []
         self.val_y_hat = []
+        self.test_x = []
+        self.test_y = []
+        self.test_y_hat = []
         self.normalizer = None
         
     def prepare_data(self):
@@ -133,6 +136,38 @@ class BerlinPro2(pl.LightningModule):
         y_hat = self.forward(x)
         test_loss = nn.MSELoss()(y_hat, y)
         self.log("test_loss", test_loss)
+        self.test_x.append(x)
+        self.test_y.append(y)
+        self.test_y_hat.append(y_hat)
+        
+    def on_test_epoch_end(self):
+        x = torch.cat([i for i in self.test_x])
+        y = torch.cat([i for i in self.test_y])
+        y_hat = torch.cat([i for i in self.test_y_hat])
+        
+        un_z_scored_y = self.normalizer.unscore_y(y.cpu())
+        un_z_scored_y_hat = self.normalizer.unscore_y(y_hat.cpu())
+        
+        feature_mses = []
+        for i in range(y.shape[1]):
+            feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[:, i], un_z_scored_y_hat[:, i])
+            feature_mses.append(feature_mse)
+            self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_mse.mean().sqrt())
+            self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\")+"_std", feature_mse.std().sqrt())
+        
+        if self.hparams.limit_y:
+            l_30_feature_mses = []
+            l_30_mask = (abs(un_z_scored_y[:, :4]) < 30).all(dim=1)
+            
+            feature_mses = []
+            for i in range(y.shape[1]):
+                l_30_feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[l_30_mask, i], un_z_scored_y_hat[l_30_mask, i])
+                l_30_feature_mses.append(l_30_feature_mse)
+                self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), l_30_feature_mse.mean().sqrt())
+                
+        self.test_x.clear()
+        self.test_y.clear()
+        self.test_y_hat.clear()
 
     def validation_step(self, batch, batch_nb):
         x, y = batch
@@ -333,4 +368,4 @@ if __name__ == '__main__':
         
     trainer = pl.Trainer(fast_dev_run=False, check_val_every_n_epoch=1, max_epochs=10000, logger=logger, precision=32, accelerator="gpu" if model.hparams.gpus > 0 else "cpu", devices=model.hparams.gpus if model.hparams.gpus > 0 else 1, callbacks=[lr_monitor])
     trainer.fit(model)
-    trainer.test()
+    trainer.test(ckpt_path='last')
