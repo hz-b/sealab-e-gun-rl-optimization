@@ -58,14 +58,14 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/"):
 
 def eval_model_paths(model_dict):
     model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_surrogate/berlinpro_surrogate", model_class=BerlinPro2)
-        result_dict = {}
-        for key, item in model_dict.items():
-            trainer = lightning.Trainer()
-            result_dict[key] = trainer.test(item)
-        
-        print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse/"))
-        
-        print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse_<_30/"))
+    result_dict = {}
+    for key, item in model_dict.items():
+        trainer = lightning.Trainer()
+        result_dict[key] = trainer.test(item)
+    
+    print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse/"))
+    
+    print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse_<_30/"))
     
 if __name__ == "__main__":
     coarse_model_paths = {
