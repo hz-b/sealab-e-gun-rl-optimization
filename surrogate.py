@@ -164,6 +164,7 @@ class BerlinPro2(pl.LightningModule):
                 l_30_feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[l_30_mask, i], un_z_scored_y_hat[l_30_mask, i])
                 l_30_feature_mses.append(l_30_feature_mse)
                 self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), l_30_feature_mse.mean().sqrt())
+                self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\")+"_std", l_30_feature_mse.std().sqrt())
                 
         self.test_x.clear()
         self.test_y.clear()
