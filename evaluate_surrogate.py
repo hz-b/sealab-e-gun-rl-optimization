@@ -56,7 +56,7 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/"):
 
 
 
-def eval_model_paths(model_dict):
+def eval_model_paths(model_paths):
     model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_surrogate/berlinpro_surrogate", model_class=BerlinPro2)
     result_dict = {}
     for key, item in model_dict.items():
