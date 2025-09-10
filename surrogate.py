@@ -155,7 +155,7 @@ class BerlinPro2(pl.LightningModule):
             self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_mse.mean().sqrt())
             self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\")+"_std", feature_mse.std().sqrt())
         
-        if self.hparams.limit_y:
+        if not self.hparams.limit_y:
             l_30_feature_mses = []
             l_30_mask = (abs(un_z_scored_y[:, :4]) < 30).all(dim=1)
             
