@@ -22,11 +22,11 @@ from normalizer import Normalizer
 #sns.set(style="darkgrid")
 
 class H5Dataset(Dataset):
-    def __init__(self, path, limit_y=True, raw=False):
+    def __init__(self, path, limit_y=True, raw=False, max_len=None):
         data = h5py.File(path,'r')
 
-        x = data['X'][:]
-        y = data['Y'][:, :4]
+        x = data['X'][:max_len]
+        y = data['Y'][:max_len, :4]
         
         data.close()
         del data
