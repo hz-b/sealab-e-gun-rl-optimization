@@ -116,7 +116,7 @@ def main():
 
     # === Train Phase ===
     for run_idx in range(3):
-        model_path, X_test, y_test = train_random_forest(data_path, run_idx=1, seed=42+run_idx)
+        model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42+run_idx)
 
         # === Test Phase ===
         metrics = test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7)
