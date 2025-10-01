@@ -7,6 +7,11 @@ from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 from surrogate import H5Dataset
 from model_helpers import create_sequential
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
+from sklearn.metrics import precision_recall_curve, average_precision_score
+from sklearn.metrics import f1_score, log_loss
+
+import matplotlib.pyplot as plt
 
 class ValidityClassifier(pl.LightningModule):
     def __init__(self, hparams):
@@ -18,6 +23,12 @@ class ValidityClassifier(pl.LightningModule):
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.test_losses = []
         self.test_accs = []
+        
+        self.test_preds = []
+        self.test_targets = []
+        
+        self.test_f1s = []
+        self.test_log_losses = []
 
     def forward(self, x):
         return self.model(x)
@@ -41,24 +52,91 @@ class ValidityClassifier(pl.LightningModule):
         self.log("lr", self.trainer.optimizers[0].param_groups[0]["lr"], prog_bar=True)
         return loss
 
+
+
     def test_step(self, batch, batch_idx):
         x, y = batch
         pred = self(x)
         y = y.unsqueeze(-1)
         loss = self.loss_fn(pred, y)
-        acc = ((pred > 0.5) == y.bool()).float().mean()
+
+        # Apply sigmoid to get probabilities
+        probs = torch.sigmoid(pred)
+
+        # Store raw probs and labels for later analysis
+        self.test_preds.append(probs.detach().cpu())
+        self.test_targets.append(y.detach().cpu())
+
+        # Thresholding
+        threshold = 0.5
+        pred_labels = (probs > threshold).float()
+
+        acc = (pred_labels == y).float().mean()
         self.test_losses.append(loss.item())
         self.test_accs.append(acc.item())
-        self.log("test_loss", loss, on_epoch=True, prog_bar=True)
-        self.log("test_acc", acc, on_epoch=True, prog_bar=True)
+
+        # Convert to NumPy for sklearn metrics
+        y_true_np = y.detach().cpu().numpy().astype(int).flatten()
+        y_probs_np = probs.detach().cpu().numpy().flatten()
+        y_pred_np = pred_labels.detach().cpu().numpy().astype(int).flatten()
+
+        # F1 Score
+        try:
+            f1 = f1_score(y_true_np, y_pred_np)
+        except ValueError:
+            f1 = 0.0
+        self.test_f1s.append(f1)
+
+        # Log Loss
+        try:
+            ll = log_loss(y_true_np, y_probs_np, labels=[0, 1])
+        except ValueError:
+            ll = float('nan')
+        self.test_log_losses.append(ll)
 
     def on_test_epoch_end(self):
-        losses = torch.tensor(self.test_losses)
-        std_loss = torch.std(losses)
-        self.log('test_loss_std', std_loss)
-        accs = torch.tensor(self.test_accs)
-        std_accs = torch.std(accs)
-        self.log('test_acc_std', std_accs)
+        import numpy as np
+
+        f1s = np.array(self.test_f1s)
+        log_losses = np.array(self.test_log_losses)
+        accs = np.array(self.test_accs)
+        losses = np.array(self.test_losses)
+
+        mean_f1 = np.nanmean(f1s)
+        std_f1 = np.nanstd(f1s)
+
+        mean_ll = np.nanmean(log_losses)
+        std_ll = np.nanstd(log_losses)
+
+        mean_acc = np.nanmean(accs)
+        std_acc = np.nanstd(accs)
+
+        mean_loss = np.nanmean(losses)
+        std_loss = np.nanstd(losses)
+
+        print(f"F1 Score:     {mean_f1:.4f} ± {std_f1:.4f}")
+        print(f"Log Loss:     {mean_ll:.4f} ± {std_ll:.4f}")
+        print(f"Accuracy:     {mean_acc:.4f} ± {std_acc:.4f}")
+        print(f"Test Loss:    {mean_loss:.4f} ± {std_loss:.4f}")
+
+        self.log("test_f1_mean", mean_f1)
+        self.log("test_f1_std", std_f1)
+
+        self.log("test_log_loss_mean", mean_ll)
+        self.log("test_log_loss_std", std_ll)
+
+        self.log("test_acc_mean", mean_acc)
+        self.log("test_acc_std", std_acc)
+
+        self.log("test_loss_mean", mean_loss)
+        self.log("test_loss_std", std_loss)
+        
+        self.test_f1s.clear()
+        self.test_log_losses.clear()
+        self.test_accs.clear()
+        self.test_losses.clear()
+        self.test_preds.clear()
+        self.test_targets.clear()
         
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
