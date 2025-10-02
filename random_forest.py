@@ -47,7 +47,7 @@ def train_random_forest(data_path, run_idx=1, seed=None, fit=True):
     X_train, y_train = splits["X_train"], splits["y_train"]
 
     clf = RandomForestClassifier(
-        n_estimators=2,#00,
+        n_estimators=100,
         max_depth=None,
         max_features='sqrt',
         min_samples_split=5,
@@ -88,19 +88,6 @@ def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7, plo
         plt.savefig(f"outputs/random_forest_cm_run{run_idx}.pdf")
         plt.close()
 
-        # --- Precision-Recall Curve (PRC) ---
-        precisions, recalls, prc_thresholds = precision_recall_curve(y_test, y_probs)
-
-        plt.figure(figsize=(8, 6))
-        plt.plot(recalls, precisions, label="PR Curve", color="blue")
-        plt.xlabel("Recall")
-        plt.ylabel("Precision")
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(f"outputs/random_forest_prc_run{run_idx}.pdf")
-        plt.close()
-
         # --- Precision, Recall, F2 vs. Threshold ---
         thresholds = np.linspace(0, 1, 200)
         precisions_thr = []
@@ -119,7 +106,7 @@ def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7, plo
         plt.figure(figsize=(10, 6))
         plt.plot(thresholds, recalls_thr, label='Recall', color='green')
         plt.plot(thresholds, precisions_thr, label='Precision', color='blue')
-        plt.axvline(x=threshold, color='red', linestyle='--', label=f'Selected Threshold = {threshold:.2f}')
+        plt.axvline(x=threshold, color='red', linestyle='--', label=f'Selected threshold = {threshold:.2f}')
         plt.xlabel('Threshold')
         plt.ylabel('Score')
         plt.legend()
@@ -143,7 +130,7 @@ def main():
     total_cm = np.zeros((2, 2), dtype=int)  # Assuming binary classification
 
     for run_idx in range(runs):
-        #model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42 + run_idx)
+        model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42 + run_idx)
         model_path = f"outputs/random_forest_model_run{run_idx}.joblib"
         metrics = test_random_forest(model_path, X_test, y_test, run_idx=run_idx, threshold=0.7)
         
