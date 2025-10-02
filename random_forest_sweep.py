@@ -94,9 +94,9 @@ def multi_param_sweep_rf(data_path, param_grid, base_params=None, num_runs=3, th
 
 def format_combined_latex_table(results_dict, param_name):
     header = (
-        "\\begin{tabular}{c|c|c|c|c|c|c}\n"
-        f"{param_name} & F1 & LogLoss & TN & FP & FN & TP \\\\\n"
-        "\\hline"
+        "\\begin{tabular}{c|c|c}\n"
+        f"{param_name} & F1 & LogLoss \\\\\n"
+        "\\toprule"
     )
     lines = [header]
 
@@ -104,30 +104,28 @@ def format_combined_latex_table(results_dict, param_name):
         f1_mean, f1_std = metrics["f1"]
         ll_mean, ll_std = metrics["logloss"]
 
-        tn_mean, tn_std = metrics["confusion"]["tn"]
-        fp_mean, fp_std = metrics["confusion"]["fp"]
-        fn_mean, fn_std = metrics["confusion"]["fn"]
-        tp_mean, tp_std = metrics["confusion"]["tp"]
+        #tn_mean, tn_std = metrics["confusion"]["tn"]
+        #fp_mean, fp_std = metrics["confusion"]["fp"]
+        #fn_mean, fn_std = metrics["confusion"]["fn"]
+        #tp_mean, tp_std = metrics["confusion"]["tp"]
 
         line = (
             f"{val} & "
             f"${f1_mean:.4f} \\pm {f1_std:.4f}$ & "
-            f"${ll_mean:.4f} \\pm {ll_std:.4f}$ & "
-            f"${tn_mean:.1f} \\pm {tn_std:.1f}$ & "
-            f"${fp_mean:.1f} \\pm {fp_std:.1f}$ & "
-            f"${fn_mean:.1f} \\pm {fn_std:.1f}$ & "
-            f"${tp_mean:.1f} \\pm {tp_std:.1f}$ \\\\"
+            f"${ll_mean:.4f} \\pm {ll_std:.4f}$ \\\\"
+            #f"${tn_mean:.1f} \\pm {tn_std:.1f}$ & "
+            #f"${fp_mean:.1f} \\pm {fp_std:.1f}$ & "
+            #f"${fn_mean:.1f} \\pm {fn_std:.1f}$ & "
+            #f"${tp_mean:.1f} \\pm {tp_std:.1f}$ \\\\"
         )
         lines.append(line)
 
-    lines.append("\\end{tabular}")
+    lines.append("\\bottomrule\n\\end{tabular}")
     return "\n".join(lines)
 
 def generate_combined_tables_for_all_sweeps(all_results):
     for param_name, result_dict in all_results.items():
-        print(f"\n📄 Combined Table for {param_name}:")
         print(format_combined_latex_table(result_dict, param_name))
-
 
 if __name__ == "__main__":
     data_path = "datasets/bbp_ds_2m_merged_v2.h5"
