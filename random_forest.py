@@ -4,15 +4,9 @@ import torch
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    ConfusionMatrixDisplay,
-    precision_recall_curve,
-    average_precision_score,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
+    classification_report, accuracy_score, precision_score, recall_score,
+    f1_score, average_precision_score, confusion_matrix, ConfusionMatrixDisplay,
+    precision_recall_curve, fbeta_score
 )
 import matplotlib.pyplot as plt
 from surrogate import H5Dataset  # Your custom dataset
@@ -49,11 +43,11 @@ def load_and_split_dataset(data_path, seed=None):
     return splits
 
 def train_random_forest(data_path, run_idx=1, seed=None, fit=True):
-    splits = load_and_split_dataset(data_path, seed)
+    splits = load_and_split_dataset(data_path, 10000)
     X_train, y_train = splits["X_train"], splits["y_train"]
 
     clf = RandomForestClassifier(
-        n_estimators=100,
+        n_estimators=2,#00,
         max_depth=None,
         max_features='sqrt',
         min_samples_split=5,
@@ -81,27 +75,58 @@ def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7, plo
     print(classification_report(y_test, y_pred, digits=4))
 
     acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, zero_division=0)
     rec = recall_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
     avg_prec = average_precision_score(y_test, y_probs)
+    cm = confusion_matrix(y_test, y_pred)
 
     if plot:
-        cm = confusion_matrix(y_test, y_pred)
+        # --- Confusion Matrix ---
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Invalid", "Valid"])
         disp.plot(cmap=plt.cm.Blues)
-        plt.title(f"[Run {run_idx}] Confusion Matrix")
-        plt.savefig("outputs/random_forest_cm.pdf")
+        plt.savefig(f"outputs/random_forest_cm_run{run_idx}.pdf")
+        plt.close()
 
-        precision, recall, _ = precision_recall_curve(y_test, y_probs)
+        # --- Precision-Recall Curve (PRC) ---
+        precisions, recalls, prc_thresholds = precision_recall_curve(y_test, y_probs)
+
         plt.figure(figsize=(8, 6))
-        plt.plot(recall, precision, label=f'PR Curve (AP = {avg_prec:.3f})')
+        plt.plot(recalls, precisions, label="PR Curve", color="blue")
         plt.xlabel("Recall")
         plt.ylabel("Precision")
-        plt.title(f"[Run {run_idx}] Precision-Recall Curve")
+        plt.grid(True)
         plt.legend()
-        plt.grid()
-        plt.savefig("outputs/random_forest_prc.pdf")
+        plt.tight_layout()
+        plt.savefig(f"outputs/random_forest_prc_run{run_idx}.pdf")
+        plt.close()
+
+        # --- Precision, Recall, F2 vs. Threshold ---
+        thresholds = np.linspace(0, 1, 200)
+        precisions_thr = []
+        recalls_thr = []
+        f2_scores = []
+
+        for t in thresholds:
+            y_pred_t = (y_probs >= t).astype(int)
+            p = precision_score(y_test, y_pred_t, zero_division=0)
+            r = recall_score(y_test, y_pred_t)
+            f2 = fbeta_score(y_test, y_pred_t, beta=2)
+            precisions_thr.append(p)
+            recalls_thr.append(r)
+            f2_scores.append(f2)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(thresholds, recalls_thr, label='Recall', color='green')
+        plt.plot(thresholds, precisions_thr, label='Precision', color='blue')
+        plt.axvline(x=threshold, color='red', linestyle='--', label=f'Selected Threshold = {threshold:.2f}')
+        plt.xlabel('Threshold')
+        plt.ylabel('Score')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f"outputs/random_forest_threshold_metrics_run{run_idx}.pdf")
+        plt.close()
 
     return {
         "accuracy": acc,
@@ -109,22 +134,31 @@ def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7, plo
         "recall": rec,
         "f1_score": f1,
         "avg_precision": avg_prec,
+        "confusion_matrix": cm,
     }
 
 def main():
     data_path = "datasets/bbp_ds_2m_merged_v2.h5"
+    runs = 3
+    total_cm = np.zeros((2, 2), dtype=int)  # Assuming binary classification
 
-    # === Train Phase ===
-    for run_idx in range(3):
-        model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42+run_idx)
-
-        # === Test Phase ===
-        metrics = test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7)
+    for run_idx in range(runs):
+        #model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42 + run_idx)
+        model_path = f"outputs/random_forest_model_run{run_idx}.joblib"
+        metrics = test_random_forest(model_path, X_test, y_test, run_idx=run_idx, threshold=0.7)
         
-        print("\n=== Final Metrics ===")
-        for k, v in metrics.items():
-            print(f"{k}: {v:.4f}")
+
+        # Accumulate confusion matrix
+        total_cm += metrics["confusion_matrix"]
+
+    # === Final aggregated confusion matrix ===
+    total_cm = total_cm/runs
+    fig, ax = plt.subplots(figsize=(4, 3))  # Change (width, height) as needed
+
+
+    disp = ConfusionMatrixDisplay(confusion_matrix=total_cm.astype(int), display_labels=["Invalid", "Valid"])
+    disp.plot(cmap=plt.cm.Blues, values_format='d', ax=ax)
+    plt.savefig("outputs/random_forest_cm_aggregated.pdf", bbox_inches="tight")
 
 if __name__ == "__main__":
     main()
-
