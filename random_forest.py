@@ -118,6 +118,14 @@ def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.75, pl
         "avg_precision": avg_prec,
         "confusion_matrix": cm,
     }
+    
+class RandomForest:
+    def __init__(self, model_path):
+        self.clf = joblib.load(model_path)
+    def __call__(self, x):
+        x_np = x.detach().cpu().numpy()
+        probs = self.clf.predict_proba(x_np)[:, 1]
+        return torch.tensor(probs, device=x.device)
 
 def main():
     data_path = "datasets/bbp_ds_2m_merged_v2.h5"
