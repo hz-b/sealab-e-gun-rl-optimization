@@ -66,7 +66,7 @@ def train_random_forest(data_path, run_idx=1, seed=None, fit=True):
     print(f"[Run {run_idx}] Model: {model_path}")
     return model_path, splits["X_test"], splits["y_test"]
 
-def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7, plot=True):
+def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.75, plot=True):
     clf = joblib.load(model_path)
     y_probs = clf.predict_proba(X_test)[:, 1]
     y_pred = (y_probs > threshold).astype(int)
@@ -83,10 +83,6 @@ def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7, plo
 
     if plot:
         # --- Confusion Matrix ---
-        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Invalid", "Valid"])
-        disp.plot(cmap=plt.cm.Blues)
-        plt.savefig(f"outputs/random_forest_cm_run{run_idx}.pdf")
-        plt.close()
 
         # --- Precision, Recall, F2 vs. Threshold ---
         thresholds = np.linspace(0, 1, 200)
@@ -103,16 +99,15 @@ def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.7, plo
             recalls_thr.append(r)
             f2_scores.append(f2)
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(thresholds, recalls_thr, label='Recall', color='green')
-        plt.plot(thresholds, precisions_thr, label='Precision', color='blue')
-        plt.axvline(x=threshold, color='red', linestyle='--', label=f'Selected threshold = {threshold:.2f}')
+        plt.figure(figsize=(4.3, 2.1))
+        plt.plot(thresholds, recalls_thr, label='Recall')
+        plt.plot(thresholds, precisions_thr, label='Precision')
+        plt.axvline(x=threshold, color='red', linestyle='--', label=f'Selected threshold')
         plt.xlabel('Threshold')
-        plt.ylabel('Score')
+        plt.ylabel('Precision / Recall')
         plt.legend()
-        plt.grid(True)
         plt.tight_layout()
-        plt.savefig(f"outputs/random_forest_threshold_metrics_run{run_idx}.pdf")
+        plt.savefig(f"outputs/random_forest_threshold_metrics_run{run_idx}.pdf", bbox_inches="tight")
         plt.close()
 
     return {
@@ -132,7 +127,7 @@ def main():
     for run_idx in range(runs):
         model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42 + run_idx)
         model_path = f"outputs/random_forest_model_run{run_idx}.joblib"
-        metrics = test_random_forest(model_path, X_test, y_test, run_idx=run_idx, threshold=0.7)
+        metrics = test_random_forest(model_path, X_test, y_test, run_idx=run_idx, threshold=0.75)
         
 
         # Accumulate confusion matrix
