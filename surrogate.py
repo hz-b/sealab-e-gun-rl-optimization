@@ -335,7 +335,7 @@ class BerlinPro2(pl.LightningModule):
         parser.add_argument('--layer_size', default=5, type=int)
         parser.add_argument('--blow', default=143., type=float)
         parser.add_argument('--shrink_factor', default="log", type=str)
-        parser.add_argument('--learning_rate', default=0.001, type=float)
+        parser.add_argument('--learning_rate', default=0.0001, type=float)
 
         # data
         parser.add_argument('--data_path', default='datasets/bbp_ds_2m_merged_v2.h5', type=str)
@@ -343,10 +343,10 @@ class BerlinPro2(pl.LightningModule):
         parser.add_argument('--limit_y', type=lambda x: bool(strtobool(x)), default=False)
 
         # training params (opt)
-        parser.add_argument('--batch_size', default=2048, type=int)
+        parser.add_argument('--batch_size', default=1024, type=int)
         parser.add_argument('--gpus', default=1, type=int)
         parser.add_argument('--optimizer', default='adam', type=str)
-        parser.add_argument('--patience', default=None, type=int, help='Patience for ReduceLROnPlateau scheduler. If None, scheduler is not used.')
+        parser.add_argument('--patience', default=500, type=int, help='Patience for ReduceLROnPlateau scheduler. If None, scheduler is not used.')
         parser.add_argument('--lr_decay_gamma', default=None, type=float, help='Decay Gamma for ExponentialLR scheduler. If None, scheduler is not used.')
         return parser
 
