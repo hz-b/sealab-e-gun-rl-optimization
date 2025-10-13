@@ -44,7 +44,7 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/"):
             if k in row_metrics:
                 mean = row_metrics[k]
                 std = row_metrics.get(f"{k}_std", 0.0)
-                val_str = f"${mean:.3f} \\pm {std:.3f}$"
+                val_str = f"${mean:.2f} \\pm {std:.2f}$"
             else:
                 val_str = "---"  # Placeholder if metric is missing
             row.append(val_str)
@@ -57,18 +57,20 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/"):
 
 
 
-def eval_model_paths(model_paths):
+def eval_model_paths(model_paths, label):
     model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_surrogate/berlinpro_surrogate", model_class=BerlinPro2)
     result_dict = {}
     for key, item in model_dict.items():
         trainer = lightning.Trainer()
         result_dict[key] = trainer.test(item)
-    with open('outputs/evaluate_surrogate.pkl', 'wb') as file:
-        pickle.dump(result_dict, file)
+        with open('outputs/evaluate_surrogate_'+label+'.pkl', 'wb') as file:
+            pickle.dump(result_dict, file)
     
     print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse/"))
     
     print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse_<_30/"))
+    
+    print(make_latex_table_from_metrics(result_dict, prefix="test_loss/"))
     
 if __name__ == "__main__":
     coarse_model_paths = {
@@ -88,7 +90,7 @@ if __name__ == "__main__":
         "blow_200": "rijhlctg",
         "shrink_lin": "gziloeus",
          }
-    eval_model_paths(coarse_model_paths)
+    eval_model_paths(coarse_model_paths, "coarse")
          
     fine_model_paths = {
         "decay_95": "iaikkt43",
@@ -107,5 +109,5 @@ if __name__ == "__main__":
         "blow_200": "ogc5jqhn",
         "shrink_lin": "jb7ne3v8",
          }
-    eval_model_paths(fine_model_paths)
+    eval_model_paths(fine_model_paths, "fine")
     
