@@ -62,6 +62,8 @@ def eval_model_paths(model_paths):
     for key, item in model_dict.items():
         trainer = lightning.Trainer()
         result_dict[key] = trainer.test(item)
+    with open('outputs/evaluate_surrogate.pkl', 'wb') as file:
+        pickle.dump(result_dict, file)
     
     print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse/"))
     
@@ -69,43 +71,40 @@ def eval_model_paths(model_paths):
     
 if __name__ == "__main__":
     coarse_model_paths = {
-        "Reference": "itjvgcf9",
-        "decay_95": "abpmsgcz",
-        "decay_99": "8izpysj6",
-        "decay_9": "rqmh11bb",
-        "patience_1000": "q9wf54fi",
-        "patience_500": "3vme6uaf",
-        "bs_1024": "phe9bmtn",
-        "bs_512": "fe726nbo",
-        "lr1e-5": "6kqms9m0",
-        "lr1e-4": "5dcl96iu",
-        "layers_3": "qqff5fih",
-        "layers_15": "f13x79r4",
-        "layers_10": "t1067zfd",
-        "blow_100": "sqerbdb5",
-        "blow_200": "tzy028j4",
-        "shrink_lin": "jt6b67yb",
+        "decay_95": "2aucg3nj",
+        "decay_99": "aafdqga6",
+        "patience_1000": "l2j8nqm5",
+        "patience_250": "zxzqaoju",
+        "bs_128": "mhjyksv8",
+        "bs_512": "04h5e6cj",
+        "lr1e-5": "i7i94bon",
+        "lr1e-4": "kwwe5kc0",
+        "lr1e-3": "uqd8xout",
+        "layers_3": "xff6j98d",
+        "layers_10": "8b63drv1",
+        "layers_15": "oocb5yj5",
+        "blow_100": "6lybs98e",
+        "blow_200": "rijhlctg",
+        "shrink_lin": "gziloeus",
          }
     eval_model_paths(coarse_model_paths)
          
     fine_model_paths = {
-        "Reference": "3yh6g4h0",
-        "decay_95": "bf38qw38",
-        "decay_99": "a4zsln77",
-        "decay_9": "qrqlyl9b",
-        "patience_1000": "3zr1oaic",
-        "patience_500": "3h7hocny",
-        "bs_1024": "cuju5zez",
-        "bs_512": "wbiecjlb",
-        "bs_32": "i3qkzpx6",
-        "lr1e-5": "izpfk6il",
-        "lr1e-4": "vrmk31q6",
-        "layers_3": "9wefmhwx",
-        "layers_15": "1lnp6rj4",
-        "layers_10": "w0zo4xwk",
-        "blow_100": "ib344ki4",
-        "blow_200": "v0pu6pr7",
-        "shrink_lin": "kc0sg1nl",
+        "decay_95": "iaikkt43",
+        "decay_99": "9is16kyc",
+        "patience_1000": "1okzr8ya",
+        "patience_250": "8mmqoqxr",
+        "bs_128": "kvpvki5b",
+        "bs_512": "qoo80gkn",
+        "lr1e-5": "o8cv2nxc",
+        "lr1e-4": "xp881xkx",
+        "lr1e-3": "g2ppqwaf",
+        "layers_3": "q7v3hf5q",
+        "layers_10": "k06stu84",
+        "layers_15": "mt65l5zc",
+        "blow_100": "ji3v2cme",
+        "blow_200": "ogc5jqhn",
+        "shrink_lin": "jb7ne3v8",
          }
     eval_model_paths(fine_model_paths)
     
