@@ -64,8 +64,8 @@ def eval_model_paths(model_paths, label):
     for key, item in model_dict.items():
         trainer = lightning.Trainer()
         result_dict[key] = trainer.test(item)
-        with open('outputs/evaluate_surrogate_'+label+'.pkl', 'wb') as file:
-            pickle.dump(result_dict, file)
+    with open('outputs/evaluate_surrogate_'+label+'.pkl', 'wb') as file:
+        pickle.dump(result_dict, file)
     
     print(make_latex_table_from_metrics(result_dict, prefix="feature_rmse/"))
     
