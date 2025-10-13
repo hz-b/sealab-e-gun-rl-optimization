@@ -147,8 +147,8 @@ class BerlinPro2(pl.LightningModule):
         
         per_sample_loss = nn.MSELoss(reduction='none')(y_hat, y)
         per_sample_loss = per_sample_loss.view(per_sample_loss.size(0), -1).mean(dim=1)
-        self.log("test_loss", per_sample_loss.mean())
-        self.log("test_loss_std", per_sample_loss.std())
+        self.log("test_loss/test_loss", per_sample_loss.mean())
+        self.log("test_loss/test_loss_std", per_sample_loss.std())
         un_z_scored_y = self.normalizer.unscore_y(y.cpu())
         un_z_scored_y_hat = self.normalizer.unscore_y(y_hat.cpu())
         
