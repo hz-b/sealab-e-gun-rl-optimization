@@ -15,6 +15,7 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/"):
         'feature_rmse_<_30/Vertical_beam_size_[mm]': r'$s_y$ [mm]',
         'feature_rmse_<_30/Horizontal_beam_position_[mm]': r'$p_x$ [mm]',
         'feature_rmse_<_30/Vertical_beam_postion_[mm]': r'$p_y$ [mm]',
+        'test_loss/test_loss': r'\ac{MSE}',
     }
 
     def clean_metric_name(name):
@@ -84,8 +85,8 @@ if __name__ == "__main__":
         "$\mathrm{LR}\,10^{-4}$": "kwwe5kc0",
         "$\mathrm{LR}\,10^{-3}$": "uqd8xout",
         "$\mathrm{Log}_3$": "xff6j98d",
-        "$\mathrm{Log}_10$": "8b63drv1",
-        "$\mathrm{Log}_15$": "oocb5yj5",
+        "$\mathrm{Log}_{10}$": "8b63drv1",
+        "$\mathrm{Log}_{15}$": "oocb5yj5",
         "Small": "6lybs98e",
         "Big": "rijhlctg",
         "$\mathrm{Lin}_5$ ": "gziloeus",
@@ -103,8 +104,8 @@ if __name__ == "__main__":
         "$\mathrm{LR}\,10^{-4}$": "xp881xkx",
         "$\mathrm{LR}\,10^{-3}$": "g2ppqwaf",
         "$\mathrm{Log}_3$": "q7v3hf5q",
-        "$\mathrm{Log}_10$": "k06stu84",
-        "$\mathrm{Log}_15$": "mt65l5zc",
+        "$\mathrm{Log}_{10}$": "k06stu84",
+        "$\mathrm{Log}_{15}$": "mt65l5zc",
         "Small": "ji3v2cme",
         "Big": "ogc5jqhn",
         "$\mathrm{Lin}_5$": "jb7ne3v8",
