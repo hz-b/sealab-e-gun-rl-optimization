@@ -135,7 +135,6 @@ class BerlinPro2(pl.LightningModule):
         x, y = batch
         y_hat = self.forward(x)
         test_loss = nn.MSELoss()(y_hat, y)
-        self.log("test_loss", test_loss)
         self.test_x.append(x)
         self.test_y.append(y)
         self.test_y_hat.append(y_hat)
