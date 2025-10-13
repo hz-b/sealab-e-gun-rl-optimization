@@ -1,6 +1,7 @@
 from surrogate import BerlinPro2
 from evaluate_nn import model_paths_to_model_dict
 import lightning
+import pickle
 
 def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/"):
     import re
