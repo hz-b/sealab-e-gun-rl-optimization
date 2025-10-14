@@ -61,7 +61,7 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/", multipli
 
                 # Bold only the mean if it's the best
                 if mean == best_values[k]:
-                    val_str = f"$\\textbf{{{mean_str}}} \\pm {std_str}$"
+                    val_str = f"$\\mathbf{{{mean_str}}} \\pm {std_str}$"
                 else:
                     val_str = f"${mean_str} \\pm {std_str}$"
             else:
