@@ -5,17 +5,22 @@ from surrogate import BerlinPro2, H5Dataset
 from random_forest import RandomForest
 
 class Critic:
-    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/7w2za3qa/checkpoints/epoch=9999-step=3650000.ckpt', validity_classifier='outputs/berlinpro_validity/berlinpro_validity/2ulcfpww/checkpoints/epoch=49-step=18200.ckpt', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/q2hke2pp/checkpoints/epoch=9999-step=2530000.ckpt', device=None, grid_resolution=20):
+    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/uqd8xout/checkpoints/epoch=9999-step=7290000.ckpt', validity_classifier='outputs/random_forest_model.joblib', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/ogc5jqhn/checkpoints/epoch=9999-step=5060000.ckpt', device=None, grid_resolution=20):
         self.model = BerlinPro2.load_from_checkpoint(surrogate, map_location=device)
         self.model.freeze()
         self.model.eval()
         if validity_classifier is not None:
-            #self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
-            #self.validity_classifier.freeze()
-            #self.validity_classifier.eval()
-            #if device is not None:
-            #    self.validity_classifier = self.validity_classifier.to(device)
-            self.validity_classifier = RandomForest("outputs/random_forest_model.joblib")
+            if validity_classifier.endswith(".joblib"):
+                # Load RandomForest model
+                self.validity_classifier = RandomForest(validity_classifier)
+            else:
+                # Load PyTorch Lightning checkpoint
+                self.validity_classifier = ValidityClassifier.load_from_checkpoint(validity_classifier, map_location=device)
+                self.validity_classifier.freeze()
+                self.validity_classifier.eval()
+                if device is not None:
+                    self.validity_classifier = self.validity_classifier.to(device)
+
         if fine_surrogate is not None:
             self.fine_surrogate =  BerlinPro2.load_from_checkpoint(fine_surrogate, map_location=self.model.device)
             self.fine_surrogate.freeze()

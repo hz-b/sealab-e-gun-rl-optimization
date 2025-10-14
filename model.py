@@ -3,12 +3,14 @@ from torch.utils.data import IterableDataset, DataLoader
 from lightning.pytorch.loggers import WandbLogger
 import lightning as L
 from lightning.pytorch.callbacks import LearningRateMonitor
+from lightning.pytorch.cli import LightningCLI
 from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
 from torch import optim, nn
 import torch.nn.functional as F
 from critic import Critic
 import random
 import wandb
+from typing import Optional
 from model_helpers import create_sequential
 
 class RandomIterableDataset(IterableDataset):
@@ -35,38 +37,59 @@ class RandomIterableDataset(IterableDataset):
         return self.num_samples
 
 class RandomModel(L.LightningModule):
-    def __init__(self, input_dim=8, output_dim=4, critic_net=Critic(), neuron_factor=500, layer_size=None, learning_rate=1e-4, optimizer='adam', lr_scheduler=None, shrink_factor="lin", activation=nn.ReLU(), last_activation=None, batch_norm=False):
+    def _get_activation(self, name):
+        if name is None:
+            return nn.Identity()
+        name = name.lower()
+        if name == "relu":
+            return nn.ReLU()
+        elif name == "mish":
+            return nn.Mish()
+        elif name == "sigmoid":
+            return nn.Sigmoid()
+        else:
+            raise ValueError(f"Unsupported activation: {name}")
+            
+    def __init__(self, input_dim:int=8, output_dim:int=4, critic_net:Critic=None, neuron_factor:int=500, layer_size:Optional[int]=None, 
+             learning_rate:float=1e-4, optimizer:str='adam', lr_scheduler:str=None, shrink_factor:str="lin", 
+             activation:str="relu", last_activation:Optional[str]=None, batch_norm:bool=False, patience:int=3, loss_norm="abs", **kwargs):
         super().__init__()
         self.neuron_factor=neuron_factor
         self.shrink_factor=shrink_factor
-        self.last_activation = nn.Identity() if last_activation is None else last_activation
-        self.activation = activation
+        self.activation = self._get_activation(activation)
+        self.last_activation = self._get_activation(last_activation)
+
         if layer_size is None:
-            self.model = nn.Sequential(nn.Linear(input_dim, self.neuron_factor*5), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), activation,
-                             nn.Linear(self.neuron_factor*5, self.neuron_factor*2), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), activation,
-                             nn.Linear(self.neuron_factor*2, self.neuron_factor*1), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), activation,
+            self.model = nn.Sequential(nn.Linear(input_dim, self.neuron_factor*5), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), self.activation,
+                             nn.Linear(self.neuron_factor*5, self.neuron_factor*2), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), self.activation,
+                             nn.Linear(self.neuron_factor*2, self.neuron_factor*1), nn.LazyBatchNorm1d() if batch_norm else nn.Identity(), self.activation,
                              nn.Linear(self.neuron_factor*1, output_dim), self.last_activation
                             )
         else:
-            self.model = create_sequential(input_dim, output_dim, layer_size, blow=neuron_factor, shrink_factor=shrink_factor, activation_function=activation, last_activation=last_activation, batch_norm=batch_norm)
+            self.model = create_sequential(input_dim, output_dim, layer_size, blow=neuron_factor, shrink_factor=shrink_factor, activation_function=self.activation, last_activation=self.last_activation, batch_norm=batch_norm)
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.learning_rate = learning_rate
         self.layer_size = layer_size
+        if critic_net is None:
+            critic_net = Critic()
         self.critic_net = critic_net
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.patience = patience
         self.save_hyperparameters()
+        if loss_norm == "l2":
+            self.loss_norm = lambda x: x**2
+        else:
+            self.loss_norm = torch.abs
         print(self.model)
 
     def forward(self, x):
         return ((self.model(x)+1.)/2.)
-    
-
 
     def training_step(self, batch, batch_idx):
         x = batch
-        rewards_mean = self.critic_net(self(x), x, penalize_invalid=False)
+        rewards_mean = self.critic_net(self(x), x, penalize_invalid=False, norm=self.loss_norm)
         self.log("x_pos_loss", rewards_mean[:,0].mean())
         self.log("y_pos_loss", rewards_mean[:,1].mean())
         self.log("size_loss", rewards_mean[:,2].mean())
@@ -77,7 +100,7 @@ class RandomModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        rewards_mean = self.critic_net(self(batch), batch, penalize_invalid=False).mean()
+        rewards_mean = self.critic_net(self(batch), batch, penalize_invalid=False, norm=self.loss_norm).mean()
         self.log("val_loss", rewards_mean, prog_bar=True)
         return rewards_mean
 
@@ -98,7 +121,7 @@ class RandomModel(L.LightningModule):
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {
-                    "scheduler": ReduceLROnPlateau(optimizer, patience=3),
+                    "scheduler": ReduceLROnPlateau(optimizer, patience=self.patience),
                     "monitor": "val_loss",
                     "frequency": 1,
                 },
@@ -109,8 +132,10 @@ class RandomModel(L.LightningModule):
         return optimizer
 
 class RandomDataModule(L.LightningDataModule):
-    def __init__(self, num_samples, input_dim, output_dim, batch_size, seed, device, val_samples, val_seed):
+    def __init__(self, input_dim=8, output_dim=4, num_samples=100000, batch_size=32, seed=42, device=None, val_samples=100000, val_seed=20000042):
         super().__init__()
+        if device is None:
+            device = torch.device('cuda')
         self.dataset = RandomIterableDataset(num_samples, input_dim, seed, device)
         self.val_dataset = RandomIterableDataset(val_samples, input_dim, val_seed, device, fixed_seed=True)
         self.batch_size = batch_size
@@ -121,24 +146,36 @@ class RandomDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size)
 
-if __name__ == "__main__":
-    batch_size = 32
-    num_samples = 100000
-    seed = 42
-    
-    wandb_logger = WandbLogger(
-            name="ref6", project="berlinpro_decision_model", save_dir='outputs', offline=False
+class CustomCLI(LightningCLI):
+    def add_arguments_to_parser(self, parser):
+        # Allow CLI override of W&B settings
+        parser.add_argument("--wandb_name", type=str, default="ref6")
+        parser.add_argument("--wandb_project", type=str, default="berlinpro_decision_model")
+        parser.add_argument("--offline", action="store_true", help="Run W&B in offline mode")
+        parser.set_defaults(trainer={"max_epochs": 250, "log_every_n_steps": 500})
+
+    def before_fit(self):
+        # Set W&B logger
+        wandb_logger = WandbLogger(
+            name=self.config.fit.wandb_name,
+            project=self.config.fit.wandb_project,
+            save_dir="outputs",
+            offline=self.config.fit.offline,
         )
-    
-    wandb.finish()
-    
-    critic_net = Critic()
-    lr_monitor = LearningRateMonitor(logging_interval='step')
-    
-    trainer = L.Trainer(max_epochs=250, log_every_n_steps=500, accelerator=str(critic_net.model.device.type), logger=wandb_logger, callbacks=[lr_monitor])
-    
-    model = RandomModel(critic_net=critic_net)
-    dm = RandomDataModule(num_samples, model.input_dim, model.output_dim, batch_size, seed, device=critic_net.model.device, val_samples=100000, val_seed=seed+20000000)
-    
-    
-    trainer.fit(model, datamodule=dm)
+        self.trainer.logger = wandb_logger
+
+        # Add LearningRateMonitor
+        self.trainer.callbacks.append(LearningRateMonitor(logging_interval='step'))
+
+    def after_fit(self):
+        # Optionally close W&B run
+        wandb.finish()
+
+
+if __name__ == "__main__":
+    cli = CustomCLI(
+        RandomModel,
+        RandomDataModule,
+        seed_everything_default=42,
+        save_config_callback=None,  # or keep default if you want .yaml configs saved
+    )
