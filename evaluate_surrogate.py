@@ -15,7 +15,8 @@ def make_latex_table_from_metrics(results_dict, prefix="feature_rmse/", multipli
         'feature_rmse_<_30/Vertical_beam_size_[mm]': r'$s_y$ [mm]',
         'feature_rmse_<_30/Horizontal_beam_position_[mm]': r'$p_x$ [mm]',
         'feature_rmse_<_30/Vertical_beam_postion_[mm]': r'$p_y$ [mm]',
-        'test_loss/test_loss': r'\ac{MSE}',
+        'test_loss/test_loss': r'Test \ac{MSE}',
+        'test_loss/val_loss': r'Validation \ac{MSE}',
     }
 
     def clean_metric_name(name):
