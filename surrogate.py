@@ -178,81 +178,86 @@ class BerlinPro2(pl.LightningModule):
         y_hat = self.forward(x)
         val_loss = nn.MSELoss()(y_hat, y)
         self.log("val_loss", val_loss, prog_bar=True)
-        self.log("test_loss/val_loss", val_loss)
         self.val_x.append(x)
         self.val_y.append(y)
         self.val_y_hat.append(y_hat)
         return val_loss
 
     def on_validation_epoch_end(self):
-        if (self.current_epoch + 1) % 10 == 0:
+        if (self.current_epoch + 1) % 10 == 0 or self.trainer.running_stage == 'validate':
             x = torch.cat([i for i in self.val_x])
             y = torch.cat([i for i in self.val_y])
             y_hat = torch.cat([i for i in self.val_y_hat])
             
-            output = {}
-            plot_data_count = 1000
+            per_sample_loss = nn.MSELoss(reduction='none')(y_hat, y)
+            per_sample_loss = per_sample_loss.view(per_sample_loss.size(0), -1).mean(dim=1)
+            self.log("test_loss/val_loss", per_sample_loss.mean())
+            self.log("test_loss/val_loss_std", per_sample_loss.std())
             
-            un_z_scored_y = self.normalizer.unscore_y(y.cpu())
-            un_z_scored_y_hat = self.normalizer.unscore_y(y_hat.cpu())
+            if not self.trainer.running_stage == 'validate':   
+                output = {}
+                plot_data_count = 1000
+                
+                un_z_scored_y = self.normalizer.unscore_y(y.cpu())
+                un_z_scored_y_hat = self.normalizer.unscore_y(y_hat.cpu())
 
-            feature_mses = []
-            for i in range(y.shape[1]):
-                feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[:, i], un_z_scored_y_hat[:, i])
-                feature_mses.append(feature_mse)
-                self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_mse.mean().sqrt())
+                feature_mses = []
+                for i in range(y.shape[1]):
+                    feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[:, i], un_z_scored_y_hat[:, i])
+                    feature_mses.append(feature_mse)
+                    self.log("feature_rmse/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), feature_mse.mean().sqrt())
 
-            feature_mses_tensor = torch.stack(feature_mses, dim=1)  # shape: [num_samples, num_features]
+                feature_mses_tensor = torch.stack(feature_mses, dim=1)  # shape: [num_samples, num_features]
 
-            # Compute the mean and std across samples for each feature
-            mean_rmse_per_feature = feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
-            std_rmse_per_feature = feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
-
-            
-            l_30_feature_mses = []
-            l_30_mask = (abs(un_z_scored_y[:, :4]) < 30).all(dim=1)
-            
-            feature_mses = []
-            for i in range(y.shape[1]):
-                l_30_feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[l_30_mask, i], un_z_scored_y_hat[l_30_mask, i])
-                l_30_feature_mses.append(l_30_feature_mse)
-                self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), l_30_feature_mse.mean().sqrt())
-
-            l_30_feature_mses_tensor = torch.stack(l_30_feature_mses, dim=1)  # shape: [num_samples, num_features]
-
-            # Compute the mean and std across samples for each feature
-            l_30_mean_rmse_per_feature = l_30_feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
-            l_30_std_rmse_per_feature = l_30_feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
+                # Compute the mean and std across samples for each feature
+                mean_rmse_per_feature = feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
+                std_rmse_per_feature = feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
 
                 
-            y_data = un_z_scored_y[:plot_data_count]
-            y_hat_data = un_z_scored_y_hat[:plot_data_count]
-            
-            for i in range(y.shape[1]):
-                mask = y_data[:,i] < 30000000
-                joint = sns.jointplot(x=y_data[:,i][mask], y=y_hat_data[:,i][mask], kind='scatter').set_axis_labels("Real", "Predicted")
-                joint.ax_joint.set_ylim(bottom=y_data[:, i][mask].min(), top=y_data[:, i][mask].max())
-                joint.ax_joint.set_title(sim_Y_labels[i])
-                joint.ax_joint.plot([y_data[:,i][mask].min(), y_data[:,i][mask].max()], [y_data[:,i][mask].min(), y_data[:,i][mask].max()], color="r")
-                rmse_str = f"RMSE: {mean_rmse_per_feature[i]:.4f} ± {std_rmse_per_feature[i]:.4f}, y < 30: {l_30_mean_rmse_per_feature[i]:.4f} ± {l_30_std_rmse_per_feature[i]:.4f}"
-                joint.ax_joint.text(
-                0.5, -0.15, rmse_str, 
-                transform=joint.ax_joint.transAxes, 
-                ha='center', va='top'
-                )
-                plt.tight_layout()
-                path = os.path.join(self.logger.save_dir, "berlinpro_surrogate", self.logger.experiment.id)
-                os.makedirs(path, exist_ok=True)
-
-                plt.savefig(os.path.join(path, 'jointplot_'+str(i+1)+'.pdf'))
+                l_30_feature_mses = []
+                l_30_mask = (abs(un_z_scored_y[:, :4]) < 30).all(dim=1)
                 
-                wandb.log({sim_Y_labels[i].replace(" ", "_").replace("/", "\\"): wandb.Image(joint.fig)})
-                joint.fig.clf()
-                plt.close(joint.fig)
-                errorplot = sns.jointplot(x=y_data[:,i][mask], y=y_data[:,i][mask]-y_hat_data[:,i][mask], color="g").fig
-                plt.tight_layout()
-                plt.savefig(os.path.join(path, 'line_plot_'+str(i+1)+'.pdf'))
-                plt.close(errorplot)
+                feature_mses = []
+                for i in range(y.shape[1]):
+                    l_30_feature_mse = nn.MSELoss(reduction="none")(un_z_scored_y[l_30_mask, i], un_z_scored_y_hat[l_30_mask, i])
+                    l_30_feature_mses.append(l_30_feature_mse)
+                    self.log("feature_rmse_<_30/"+sim_Y_labels[i].replace(" ", "_").replace("/", "\\"), l_30_feature_mse.mean().sqrt())
+
+                l_30_feature_mses_tensor = torch.stack(l_30_feature_mses, dim=1)  # shape: [num_samples, num_features]
+
+                # Compute the mean and std across samples for each feature
+                l_30_mean_rmse_per_feature = l_30_feature_mses_tensor.mean(dim=0).sqrt()  # Mean RMSE per feature
+                l_30_std_rmse_per_feature = l_30_feature_mses_tensor.std(dim=0).sqrt()  # Std RMSE per feature
+
+                    
+                y_data = un_z_scored_y[:plot_data_count]
+                y_hat_data = un_z_scored_y_hat[:plot_data_count]
+                
+                for i in range(y.shape[1]):
+                    mask = y_data[:,i] < 30000000
+                    joint = sns.jointplot(x=y_data[:,i][mask], y=y_hat_data[:,i][mask], kind='scatter').set_axis_labels("Real", "Predicted")
+                    joint.ax_joint.set_ylim(bottom=y_data[:, i][mask].min(), top=y_data[:, i][mask].max())
+                    joint.ax_joint.set_title(sim_Y_labels[i])
+                    joint.ax_joint.plot([y_data[:,i][mask].min(), y_data[:,i][mask].max()], [y_data[:,i][mask].min(), y_data[:,i][mask].max()], color="r")
+                    rmse_str = f"RMSE: {mean_rmse_per_feature[i]:.4f} ± {std_rmse_per_feature[i]:.4f}, y < 30: {l_30_mean_rmse_per_feature[i]:.4f} ± {l_30_std_rmse_per_feature[i]:.4f}"
+                    joint.ax_joint.text(
+                    0.5, -0.15, rmse_str, 
+                    transform=joint.ax_joint.transAxes, 
+                    ha='center', va='top'
+                    )
+                    plt.tight_layout()
+                    path = os.path.join(self.logger.save_dir, "berlinpro_surrogate", self.logger.experiment.id)
+                    os.makedirs(path, exist_ok=True)
+
+                    plt.savefig(os.path.join(path, 'jointplot_'+str(i+1)+'.pdf'))
+                    
+                    wandb.log({sim_Y_labels[i].replace(" ", "_").replace("/", "\\"): wandb.Image(joint.fig)})
+                    joint.fig.clf()
+                    plt.close(joint.fig)
+                    errorplot = sns.jointplot(x=y_data[:,i][mask], y=y_data[:,i][mask]-y_hat_data[:,i][mask], color="g").fig
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(path, 'line_plot_'+str(i+1)+'.pdf'))
+                    plt.close(errorplot)
 
             self.val_x.clear()
             self.val_y.clear()
