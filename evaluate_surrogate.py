@@ -84,7 +84,19 @@ def eval_model_paths(model_paths, label, load=False):
         result_dict = {}
         for key, item in model_dict.items():
             trainer = lightning.Trainer()
-            result_dict[key] = trainer.test(item)
+            # Run validation and test, get first result from each
+            val_results = trainer.validate(item)
+            test_results = trainer.test(item)
+
+            # Safely get first dicts, or empty if results missing
+            val_dict = val_results[0] if val_results else {}
+            test_dict = test_results[0] if test_results else {}
+
+            # Merge into one dict
+            merged_results = {**val_dict, **test_dict}
+
+            # Store under the current model key
+            result_dict[key] = merged_results
         with open('outputs/evaluate_surrogate_'+label+'.pkl', 'wb') as file:
              pickle.dump(result_dict, file)
     
@@ -108,7 +120,8 @@ if __name__ == "__main__":
         r"$\mathrm{Log}_{10}$": "8b63drv1",
         r"$\mathrm{Log}_{15}$": "oocb5yj5",
         r"Small": "6lybs98e",
-        r"Big": "rijhlctg",
+        r"Mid": "rijhlctg",
+        r"Big": "u7up111w",
         r"$\mathrm{Lin}_5$ ": "gziloeus",
          }
     eval_model_paths(coarse_model_paths, "coarse", load=load)
@@ -125,7 +138,8 @@ if __name__ == "__main__":
         r"$\mathrm{Log}_{10}$": "k06stu84",
         r"$\mathrm{Log}_{15}$": "mt65l5zc",
         r"Small": "ji3v2cme",
-        r"Big": "ogc5jqhn",
+        r"Mid": "ogc5jqhn",
+        r"Big": "ok88wzg0",
         r"$\mathrm{Lin}_5$": "jb7ne3v8",
          }
     eval_model_paths(fine_model_paths, "fine", load=load)

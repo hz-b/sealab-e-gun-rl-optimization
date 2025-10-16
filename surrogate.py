@@ -178,6 +178,7 @@ class BerlinPro2(pl.LightningModule):
         y_hat = self.forward(x)
         val_loss = nn.MSELoss()(y_hat, y)
         self.log("val_loss", val_loss, prog_bar=True)
+        self.log("test_loss/val_loss", val_loss)
         self.val_x.append(x)
         self.val_y.append(y)
         self.val_y_hat.append(y_hat)
