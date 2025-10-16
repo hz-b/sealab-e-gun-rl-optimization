@@ -5,7 +5,7 @@ from surrogate import BerlinPro2, H5Dataset
 from random_forest import RandomForest
 
 class Critic:
-    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/uqd8xout/checkpoints/epoch=9999-step=7290000.ckpt', validity_classifier='outputs/random_forest_model_run0.joblib', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/ogc5jqhn/checkpoints/epoch=9999-step=5060000.ckpt', device=None, grid_resolution=20):
+    def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/u7up111w/checkpoints/epoch=9999-step=7290000.ckpt', validity_classifier='outputs/random_forest_model_run0.joblib', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/ogc5jqhn/checkpoints/epoch=9999-step=5060000.ckpt', device=None, grid_resolution=20):
         self.model = BerlinPro2.load_from_checkpoint(surrogate, map_location=device)
         self.model.freeze()
         self.model.eval()
