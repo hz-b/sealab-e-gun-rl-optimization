@@ -94,7 +94,7 @@ def eval_model_paths(model_paths, label, load=False):
             test_dict = test_results[0] if test_results else {}
 
             # Merge into one dict
-            merged_results = {**val_dict, **test_dict}
+            merged_results = [{**val_dict, **test_dict}]
 
             # Store under the current model key
             result_dict[key] = merged_results
