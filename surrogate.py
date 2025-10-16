@@ -184,7 +184,7 @@ class BerlinPro2(pl.LightningModule):
         return val_loss
 
     def on_validation_epoch_end(self):
-        if (self.current_epoch + 1) % 10 == 0 or self.trainer.running_stage == 'validate':
+        if self.current_epoch % 10 == 0:
             x = torch.cat([i for i in self.val_x])
             y = torch.cat([i for i in self.val_y])
             y_hat = torch.cat([i for i in self.val_y_hat])
@@ -194,7 +194,7 @@ class BerlinPro2(pl.LightningModule):
             self.log("test_loss/val_loss", per_sample_loss.mean())
             self.log("test_loss/val_loss_std", per_sample_loss.std())
             
-            if not self.trainer.running_stage == 'validate':   
+            if self.current_epoch != 0:   
                 output = {}
                 plot_data_count = 1000
                 
