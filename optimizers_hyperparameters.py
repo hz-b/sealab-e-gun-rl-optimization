@@ -126,6 +126,6 @@ if __name__ == "__main__":
     opt_name, eval_fn, param_name, param_info = job_list[job_id]
 
     print(f"Running Job ID {job_id}: {opt_name} – {param_name}")
-    result_dict = eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=2, niter=10)
+    result_dict = eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=10, niter=1000)
     plot_result_dict(result_dict, param_info, opt_name, param_name)
 
