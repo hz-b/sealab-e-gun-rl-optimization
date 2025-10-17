@@ -12,6 +12,7 @@ import torch.utils.benchmark as benchmark
 import matplotlib.pyplot as plt
 
 from critic import Critic
+import random
 from model import RandomModel, RandomIterableDataset
 
 from scipy.optimize import minimize, dual_annealing
@@ -28,6 +29,10 @@ from evotorch.logging import StdOutLogger
 from evaluate_nn import get_checkpoint_path
 
 def eval_scipy(method, state, niter, device=torch.device('cpu')):
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
     state = state.to(device)
     critic_net = Critic(device=device)
     initial_action = torch.rand((4), device=device)
@@ -60,6 +65,7 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
 def eval_sa(
     state,
     niter,
+    seed=42,
     step_size=0.1,
     T_start=1.0,
     T_end=1e-3,
@@ -67,7 +73,7 @@ def eval_sa(
     verbose=True,
     max_init_retries = 100,
 ):
-    import time
+    torch.manual_seed(seed)
     device = state.device
     critic_net = Critic(device=device)
     dim = 4  # action dimension
@@ -96,7 +102,7 @@ def eval_sa(
 
     if verbose:
         print(f"[SA] Initial energy: {current_energy.item():.6f}")
-        print(f"[SA] Running with step_size={step_size}, T_start={T_start}, schedule={cooling_schedule}, niter={niter}")
+        print(f"[SA] Running with step_size={step_size}, T_start={T_start}, schedule={cooling_schedule}, niter={niter}, seed={seed}")
 
     def temperature(t):
         if cooling_schedule == 'exp':
@@ -143,7 +149,8 @@ def eval_sa(
 
     return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_torch_sgd(state, niter, initial_action=None):
+def eval_torch_sgd(state, niter, seed=42, lr=0.1, initial_action=None):
+    torch.manual_seed(seed)
     if state.device.type == "cuda":
         warmup_gpu(state.device)
 
@@ -155,7 +162,6 @@ def eval_torch_sgd(state, niter, initial_action=None):
         initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)  # Needs grad to be optimized
     else:
         initial_action = initial_action.clone().detach().requires_grad_(True)
-    lr = 0.1
 
     optimizer = optim.SGD([initial_action], lr=lr)
     optimization_values = []
@@ -176,7 +182,8 @@ def eval_torch_sgd(state, niter, initial_action=None):
     elapsed_time = end_time - start_time
     return torch.stack(optimization_values).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_evotorch_GA(state, niter, popsize=200, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
+def eval_evotorch_GA(state, niter=1000, seed=42, popsize=200, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
+    torch.manual_seed(seed)
     if state.device.type == "cuda":
         warmup_gpu(state.device)
 
@@ -559,7 +566,7 @@ def jac_std_avg(model, stddev=.2):
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
-def load_model_critic_net(device, path='tfw20je2'):
+def load_model_critic_net(device, path='ii9t50in'):
     critic_net = Critic(device=device)
     path = get_checkpoint_path(path)
     model = RandomModel.load_from_checkpoint(path, critic_net=critic_net,  map_location=device).to(device)

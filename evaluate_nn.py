@@ -9,7 +9,7 @@ import re
 from critic import Critic
 from model import RandomDataModule, RandomModel
 
-def get_checkpoint_path(identifier, prefix, suffix="checkpoints"):
+def get_checkpoint_path(identifier, prefix="outputs/berlinpro_decision_model", suffix="checkpoints"):
     """
     Get the checkpoint file path with the highest step for a given identifier.
     

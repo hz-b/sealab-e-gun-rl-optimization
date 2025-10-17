@@ -10,7 +10,7 @@ from matplotlib.ticker import FuncFormatter
 def space_thousands(x, pos):
     return f"{int(x):,}".replace(",", "\u202f")
 
-def eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=5, niter=100):
+def eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=5, niter=100, init_seed=8000000):
     result_dict = {}
     device = torch.device('cpu')
     ds = RandomIterableDataset(repetitions, 8, 50000000, device)
@@ -20,12 +20,12 @@ def eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=5, 
     for val in tqdm(param_info["values"], desc=f"{param_name}", leave=False):
         run_progresses = []
 
-        for state in tqdm(ds, total=repetitions, leave=False):
+        for i, state in enumerate(tqdm(ds, total=repetitions, leave=False)):
             state = state.unsqueeze(0)
             kwargs = {param_name: val}
 
             with torch.no_grad():
-                progress, _, _ = eval_fn(state, niter=niter, **kwargs)
+                progress, _, _ = eval_fn(state, niter=niter, seed=init_seed+i, **kwargs)
 
             run_progresses.append(progress)
 
