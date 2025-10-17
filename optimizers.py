@@ -63,8 +63,10 @@ def eval_sa(
     step_size=0.1,
     T_start=1.0,
     T_end=1e-3,
-    cooling_schedule='exp'
+    cooling_schedule='exp',
+    verbose=True
 ):
+    import time
     device = state.device
     critic_net = Critic(device=device)
     dim = 4  # action dimension
@@ -82,6 +84,11 @@ def eval_sa(
     current_energy = energy_fn(x)
     best_energy = current_energy.clone()
     best_losses = [best_energy.item()]
+    accepted = 0
+
+    if verbose:
+        print(f"[SA] Initial energy: {current_energy.item():.6f}")
+        print(f"[SA] Running with step_size={step_size}, T_start={T_start}, schedule={cooling_schedule}, niter={niter}")
 
     def temperature(t):
         if cooling_schedule == 'exp':
@@ -92,6 +99,7 @@ def eval_sa(
             raise ValueError("Unknown cooling schedule")
 
     start_time = time.time()
+
     for t in tqdm(range(niter), leave=False):
         T = temperature(t)
         perturbation = torch.randn_like(x) * step_size
@@ -105,16 +113,27 @@ def eval_sa(
         if delta_E < 0 or rand_val < accept_prob:
             x = x_new
             current_energy = energy_new
+            accepted += 1
             if energy_new < best_energy:
                 best_energy = energy_new
                 best_x = x_new.clone()
 
         best_losses.append(best_energy.item())
 
+        # Optional per-interval logging
+        if verbose and t % (niter // 10) == 0 and t > 0:
+            print(f"[SA] Iter {t:4d} | T={T:.4g} | Current Energy={current_energy.item():.6f} | Best={best_energy.item():.6f}")
+
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    acceptance_rate = accepted / niter
 
+    if verbose:
+        print(f"[SA] Finished in {elapsed_time:.2f} seconds")
+        print(f"[SA] Final best energy: {best_energy.item():.6f}")
+        print(f"[SA] Acceptance rate: {acceptance_rate * 100:.2f}%")
+
+    return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_torch_sgd(state, niter, initial_action=None):
     if state.device.type == "cuda":
