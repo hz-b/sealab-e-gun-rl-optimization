@@ -10,7 +10,6 @@ from torch.func import vmap, jacrev
 import torch.utils.benchmark as benchmark
 
 import matplotlib.pyplot as plt
-import optuna
 
 from critic import Critic
 from model import RandomModel, RandomIterableDataset
@@ -27,40 +26,6 @@ from evotorch.operators import (
 from evotorch.logging import StdOutLogger
 
 from evaluate_nn import get_checkpoint_path
-
-def eval_optuna(state, niter=100):
-  
-    def eval_critic_solution(solution, state, critic_net):
-        # solution: numpy array of shape (4,)
-        solution_tensor = torch.tensor(solution, dtype=torch.float32, device=state.device).unsqueeze(0)
-        init_problem = state.repeat(1, 1)
-        output = critic_net(solution_tensor, init_problem)  # shape: (1, 3)
-        return output
-
-    eval_history = []
-    def optuna_objective(trial, state):
-        # Sample 4 parameters between 0.0 and 1.0
-        solution = [trial.suggest_float(f"x{i}", 0.0, 1.0) for i in range(4)]
-        
-        critic_net = Critic(device=state.device)
-        solution = eval_critic_solution(solution, state, critic_net)
-        eval_history.append(solution)
-        callback_times.append(time.time())
-        return solution.mean().item()
-
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-    study = optuna.create_study(direction="minimize")
-
-    callback_times = []
-    start_time = time.time()
-    study.optimize(lambda trial: optuna_objective(trial, state), n_trials=niter, show_progress_bar=True)
-
-    best_params = study.best_params
-    best_solution = torch.tensor([best_params[f"x{i}"] for i in range(4)], device=state.device)
-    
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    return torch.stack(eval_history).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
     if state.device.type == "cuda":
@@ -708,7 +673,6 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
             #"Powell’s Method": eval_scipy("Powell", state, niter),
             #"Simulated Annealing": eval_scipy_annealing(state, niter),
             #"Gradient Descent": eval_torch_sgd(state, niter),
-            #"TPE": eval_optuna(state, niter),
             "GA": eval_evotorch_GA(state, niter)
         }
         outputs_list.append(outputs)
