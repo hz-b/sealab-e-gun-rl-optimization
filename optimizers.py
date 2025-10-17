@@ -58,52 +58,42 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
     return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_sa(
-    model,
-    observed_rays,
-    uncompensated_parameters,
-    steps=1000,
+    state,
+    niter,
     step_size=0.1,
     T_start=1.0,
     T_end=1e-3,
-    cooling_schedule='exp',
-    verbose=False
+    cooling_schedule='exp'
 ):
-    device = model.device
-    dim = uncompensated_parameters.shape[-1]
+    device = state.device
+    critic_net = Critic(device=device)
+    dim = 4  # action dimension
+    callback_times = []
 
-    def energy_fn(offsets):
-        # Clamp to [0, 1] since offsets are unscaled
-        offsets = offsets.clamp(0.0, 1.0)
-        scaled_offsets = model.rescale_offset(offsets)
-        compensated_rays = model(uncompensated_parameters + scaled_offsets)
-        loss = ((compensated_rays - observed_rays) ** 2).mean().to(device)
+    def energy_fn(x):
+        x = x.clamp(0.0, 1.0)
+        value = critic_net(x.view(1, -1), state)
         callback_times.append(time.time())
-        return loss
+        return value.mean()
 
-    # Initialize with uniform random [0, 1]
+    # Initialize candidate
     x = torch.rand(dim, device=device)
-    x.requires_grad = False
-
     best_x = x.clone()
     current_energy = energy_fn(x)
     best_energy = current_energy.clone()
-
-    best_losses = [best_energy.item()]  # Track best loss over time
+    best_losses = [best_energy.item()]
 
     def temperature(t):
         if cooling_schedule == 'exp':
-            return T_start * (T_end / T_start) ** (t / steps)
+            return T_start * (T_end / T_start) ** (t / niter)
         elif cooling_schedule == 'linear':
-            return T_start - t * (T_start - T_end) / steps
+            return T_start - t * (T_start - T_end) / niter
         else:
             raise ValueError("Unknown cooling schedule")
 
-    callback_times = []
     start_time = time.time()
-    for t in trange(steps, disable=not verbose):
+    for t in tqdm(range(niter), leave=False):
         T = temperature(t)
-
-        # Propose new candidate
         perturbation = torch.randn_like(x) * step_size
         x_new = (x + perturbation).clamp(0.0, 1.0)
         energy_new = energy_fn(x_new)
@@ -121,11 +111,10 @@ def eval_sa(
 
         best_losses.append(best_energy.item())
 
-        if verbose and t % max(1, (steps // 10)) == 0:
-            print(f"Step {t}, Energy: {energy_new.item():.4f}, Best: {best_energy.item():.4f}, Temp: {T:.4f}")
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-    final_params = model.rescale_offset(best_x.clamp(0.0, 1.0)) + uncompensated_parameters
-    return final_params.squeeze(-2), best_energy.item(), best_losses, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_torch_sgd(state, niter, initial_action=None):
     if state.device.type == "cuda":
