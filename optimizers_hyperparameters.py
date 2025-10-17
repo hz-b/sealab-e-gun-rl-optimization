@@ -93,16 +93,16 @@ if __name__ == "__main__":
                     "values": [0.01, 0.1, 0.2, 0.5, 1.0],
                     "label": r"$\eta$",
                     "scale": "log",
-                    "loc": "lower left"
+                    "loc": "lower left",
                 },
                 "T_start": {
                     "values": [0.1, 1.0, 10.0, 100.0],
-                    "label": r"$T_0$"
+                    "label": r"$T_0$",
                     "scale": "log",
                 },
                 "cooling_schedule": {
                     "values": ['exp', 'linear'],
-                    "label": r"$\text{schedule}$"
+                    "label": r"$\text{schedule}$",
                     "scale": "log",
                 },
             }
