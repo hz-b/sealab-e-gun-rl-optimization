@@ -1,7 +1,7 @@
 import logging
 import pickle
 import time
-from tqdm.auto import tqdm
+from tqdm.auto import tqdm, trange
 
 import torch
 import torch.nn as nn
@@ -27,161 +27,6 @@ from evotorch.logging import StdOutLogger
 
 from evaluate_nn import get_checkpoint_path
 
-def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
-    if state.device.type == "cuda":
-        warmup_gpu(state.device)
-
-    if state.device.type == "cuda":
-        torch.cuda.synchronize()
-    
-    logging.getLogger("evotorch").setLevel(logging.WARNING)
-    critic_net = Critic(device=state.device)
-    popsize=200
-    init_problem = state.repeat_interleave(popsize, dim=0)
-    optimization_values = []
-    def critic_problem(x):
-        output = critic_net(x, init_problem, clamping=False, penalize_forbidden_actions=True)
-        optimization_values.append(output)
-        callback_times.append(time.time())
-        return output
-                                          
-    prob = Problem(
-        # Two objectives, both minimization
-        ["min", "min", "min"],
-        critic_problem,
-        initial_bounds=(0.0, 1.0),
-        solution_length=4,
-        vectorized=True,
-        device=state.device
-    )
-    
-    # Works like NSGA-II for multiple objectives
-    ga = SteadyStateGA(prob, popsize=popsize)
-    ga.use(
-        SimulatedBinaryCrossOver(
-            prob,
-            tournament_size=tournament_size,
-            cross_over_rate=cross_over_rate,
-            eta=eta,
-        )
-    )
-    ga.use(GaussianMutation(prob, stdev=stdev))
-
-    start_time = time.time()
-    callback_times = []
-    ga.run(niter//2)
-    output = torch.stack(optimization_values)
-
-    best_indices = output.mean(dim=-1).argmin(dim=1)
-    if state.device.type == "cuda":
-        torch.cuda.synchronize()
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    return output[torch.arange(niter), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
-
-def eval_evotorch_GA(state, niter, popsize=200, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
-    if state.device.type == "cuda":
-        warmup_gpu(state.device)
-
-    if state.device.type == "cuda":
-        torch.cuda.synchronize()
-    
-    logging.getLogger("evotorch").setLevel(logging.WARNING)
-    critic_net = Critic(device=state.device)
-    init_problem_one = state.repeat_interleave(popsize, dim=0)
-    optimization_values = []
-    def critic_problem(x):
-        if cross_over_rate != 1.0:
-            init_problem = state.repeat_interleave(x.shape[0], dim=0)
-        else:
-            init_problem = init_problem_one
-        output = critic_net(x.clone(), init_problem, clamping=False, penalize_forbidden_actions=True)
-        scalar = output.mean(dim=1)
-        optimization_values.append(output)
-        callback_times.append(time.time())
-        return scalar
-                                          
-    prob = Problem(
-        ["min"],
-        critic_problem,
-        initial_bounds=(0.0, 1.0),
-        solution_length=4,
-        vectorized=True,
-        device=state.device
-    )
-    
-    # Works like NSGA-II for multiple objectives
-    ga = SteadyStateGA(prob, popsize=popsize)
-    ga.use(
-        SimulatedBinaryCrossOver(
-            prob,
-            tournament_size=tournament_size,
-            cross_over_rate=cross_over_rate,
-            eta=eta,
-        )
-    )
-    ga.use(GaussianMutation(prob, stdev=stdev))
-
-    callback_times = []
-    start_time = time.time()
-    ga.run(niter//2)
-    if cross_over_rate != 1.0:
-        optimization_values = [i[:popsize] for i in optimization_values]
-    output = torch.stack(optimization_values)
-
-    best_indices = output.mean(dim=-1).argmin(dim=1)
-    best_solution = ga.status["pop_best"].values.clone()
-
-    if state.device.type == "cuda":
-        torch.cuda.synchronize()
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    return output[torch.arange(niter), best_indices], best_solution, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
-    
-def eval_scipy_annealing(state, niter, device=torch.device('cpu'), visit=2.62, accept=-5, initial_temp=5230.0):
-    state = state.to(device)
-    critic_net = Critic(device=device)
-    
-    optimization_values = []
-
-    def y_const(x):
-        value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state)
-        optimization_values.append(value)
-        callback_times.append(time.time())
-        return value.mean().item()
-    
-    bounds = [(0., 1.), (0., 1.), (0., 1.), (0., 1.)]
-
-    start_time = time.time()
-    callback_times = []
-    # Run dual annealing
-    res = dual_annealing(
-        func=y_const,
-        bounds=bounds,
-        maxiter=niter,
-        maxfun=niter,
-        visit=visit,
-        accept=accept,
-        initial_temp=initial_temp,
-        no_local_search=False  # disables local search to perform normal simulated annealing
-    )
-    
-    # Pad values if fewer than niter
-    while len(optimization_values) < niter:
-        optimization_values.append(optimization_values[-1])
-
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
-
-def calculate_iter_durations(start_time, callback_times, niter):
-    callback_times = [start_time] + callback_times  # prepend total start
-    iter_durations = [t2 - start_time for t1, t2 in zip(callback_times[:-1], callback_times[1:])]
-
-    while len(iter_durations) < niter:
-        iter_durations.append(iter_durations[-1])
-    return iter_durations[:niter]
-    
 def eval_scipy(method, state, niter, device=torch.device('cpu')):
     state = state.to(device)
     critic_net = Critic(device=device)
@@ -211,8 +56,6 @@ def eval_scipy(method, state, niter, device=torch.device('cpu')):
     end_time = time.time()
     elapsed_time = end_time - start_time
     return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
-
-from tqdm import trange
 
 def eval_sa(
     model,
@@ -284,7 +127,6 @@ def eval_sa(
     final_params = model.rescale_offset(best_x.clamp(0.0, 1.0)) + uncompensated_parameters
     return final_params.squeeze(-2), best_energy.item(), best_losses, calculate_iter_durations(start_time, callback_times, niter)
 
-
 def eval_torch_sgd(state, niter, initial_action=None):
     if state.device.type == "cuda":
         warmup_gpu(state.device)
@@ -317,6 +159,65 @@ def eval_torch_sgd(state, niter, initial_action=None):
     end_time = time.time()
     elapsed_time = end_time - start_time
     return torch.stack(optimization_values).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+
+def eval_evotorch_GA(state, niter, popsize=200, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
+    if state.device.type == "cuda":
+        warmup_gpu(state.device)
+
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    
+    logging.getLogger("evotorch").setLevel(logging.WARNING)
+    critic_net = Critic(device=state.device)
+    init_problem_one = state.repeat_interleave(popsize, dim=0)
+    optimization_values = []
+    def critic_problem(x):
+        if cross_over_rate != 1.0:
+            init_problem = state.repeat_interleave(x.shape[0], dim=0)
+        else:
+            init_problem = init_problem_one
+        output = critic_net(x.clone(), init_problem, clamping=False, penalize_forbidden_actions=True)
+        scalar = output.mean(dim=1)
+        optimization_values.append(output)
+        callback_times.append(time.time())
+        return scalar
+                                          
+    prob = Problem(
+        ["min"],
+        critic_problem,
+        initial_bounds=(0.0, 1.0),
+        solution_length=4,
+        vectorized=True,
+        device=state.device
+    )
+    
+    # Works like NSGA-II for multiple objectives
+    ga = SteadyStateGA(prob, popsize=popsize)
+    ga.use(
+        SimulatedBinaryCrossOver(
+            prob,
+            tournament_size=tournament_size,
+            cross_over_rate=cross_over_rate,
+            eta=eta,
+        )
+    )
+    ga.use(GaussianMutation(prob, stdev=stdev))
+
+    callback_times = []
+    start_time = time.time()
+    ga.run(niter//2)
+    if cross_over_rate != 1.0:
+        optimization_values = [i[:popsize] for i in optimization_values]
+    output = torch.stack(optimization_values)
+
+    best_indices = output.mean(dim=-1).argmin(dim=1)
+    best_solution = ga.status["pop_best"].values.clone()
+
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return output[torch.arange(niter), best_indices], best_solution, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def warmup_gpu(device):
     a = torch.randn(3000, 3000, device=device)
@@ -353,6 +254,102 @@ def benchmark_model(model, input_count=4, samples=1):
     
     result = timer.timeit(1000)
     print(result)  # Automatically shows time per run and other stats
+
+def eval_scipy_annealing(state, niter, device=torch.device('cpu'), visit=2.62, accept=-5, initial_temp=5230.0):
+    state = state.to(device)
+    critic_net = Critic(device=device)
+    
+    optimization_values = []
+
+    def y_const(x):
+        value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state)
+        optimization_values.append(value)
+        callback_times.append(time.time())
+        return value.mean().item()
+    
+    bounds = [(0., 1.), (0., 1.), (0., 1.), (0., 1.)]
+
+    start_time = time.time()
+    callback_times = []
+    # Run dual annealing
+    res = dual_annealing(
+        func=y_const,
+        bounds=bounds,
+        maxiter=niter,
+        maxfun=niter,
+        visit=visit,
+        accept=accept,
+        initial_temp=initial_temp,
+        no_local_search=False  # disables local search to perform normal simulated annealing
+    )
+    
+    # Pad values if fewer than niter
+    while len(optimization_values) < niter:
+        optimization_values.append(optimization_values[-1])
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+
+def eval_evotorch(state, niter, stdev=0.01, tournament_size=2, eta=8, cross_over_rate=1.0):
+    if state.device.type == "cuda":
+        warmup_gpu(state.device)
+
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    
+    logging.getLogger("evotorch").setLevel(logging.WARNING)
+    critic_net = Critic(device=state.device)
+    popsize=200
+    init_problem = state.repeat_interleave(popsize, dim=0)
+    optimization_values = []
+    def critic_problem(x):
+        output = critic_net(x, init_problem, clamping=False, penalize_forbidden_actions=True)
+        optimization_values.append(output)
+        callback_times.append(time.time())
+        return output
+                                          
+    prob = Problem(
+        # Two objectives, both minimization
+        ["min", "min", "min"],
+        critic_problem,
+        initial_bounds=(0.0, 1.0),
+        solution_length=4,
+        vectorized=True,
+        device=state.device
+    )
+    
+    # Works like NSGA-II for multiple objectives
+    ga = SteadyStateGA(prob, popsize=popsize)
+    ga.use(
+        SimulatedBinaryCrossOver(
+            prob,
+            tournament_size=tournament_size,
+            cross_over_rate=cross_over_rate,
+            eta=eta,
+        )
+    )
+    ga.use(GaussianMutation(prob, stdev=stdev))
+
+    start_time = time.time()
+    callback_times = []
+    ga.run(niter//2)
+    output = torch.stack(optimization_values)
+
+    best_indices = output.mean(dim=-1).argmin(dim=1)
+    if state.device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    return output[torch.arange(niter), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+
+def calculate_iter_durations(start_time, callback_times, niter):
+    callback_times = [start_time] + callback_times  # prepend total start
+    iter_durations = [t2 - start_time for t1, t2 in zip(callback_times[:-1], callback_times[1:])]
+
+    while len(iter_durations) < niter:
+        iter_durations.append(iter_durations[-1])
+    return iter_durations[:niter]
 
 
 def plot_time_comparison(outputs, network_outputs=None, real_time=False):
