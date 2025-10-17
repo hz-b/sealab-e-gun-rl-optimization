@@ -64,7 +64,8 @@ def eval_sa(
     T_start=1.0,
     T_end=1e-3,
     cooling_schedule='exp',
-    verbose=True
+    verbose=True,
+    max_init_retries = 100,
 ):
     import time
     device = state.device
@@ -78,8 +79,15 @@ def eval_sa(
         callback_times.append(time.time())
         return value.mean()
 
-    # Initialize candidate
-    x = torch.rand(dim, device=device)
+    # Initialize candidate (resample until valid)
+    for _ in range(max_init_retries):
+        x = torch.rand(dim, device=device)
+        current_energy = energy_fn(x)
+        if current_energy < 1000:
+            break
+    else:
+        raise RuntimeError("Failed to sample a valid initial candidate within limit.")
+    
     best_x = x.clone()
     current_energy = energy_fn(x)
     best_energy = current_energy.clone()
