@@ -84,7 +84,7 @@ class Critic:
 
         if penalize_invalid:
             validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(prepared_input))
-            validity = (validity_scores > 0.5).squeeze(-1)
+            validity = (validity_scores > 0.75).squeeze(-1)
             reward_copy = reward.clone()
             reward_copy[~validity] = 1000.
             return reward_copy
