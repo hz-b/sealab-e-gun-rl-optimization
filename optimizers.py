@@ -165,12 +165,13 @@ def eval_gd(state, niter, seed=42, lr=0.1):
     callback_times = []
     for _ in range(niter):
         optimizer.zero_grad()
-        value = critic_net(initial_action.view(1, -1), state)
-        loss = value.mean()
-        optimization_values.append(value.detach())
-        loss.backward()
-        optimizer.step()
-        callback_times.append(time.time())
+        with torch.enable_grad():
+            value = critic_net(initial_action.view(1, -1), state)
+            loss = value.mean()
+            optimization_values.append(value.detach())
+            loss.backward()
+            optimizer.step()
+            callback_times.append(time.time())
     if state.device.type == "cuda":
         torch.cuda.synchronize()
     end_time = time.time()
