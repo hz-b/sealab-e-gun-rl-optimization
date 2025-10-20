@@ -257,7 +257,7 @@ def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None
     dofs = [DOF(name=str(i), search_domain=(0., 1.)) for i in range(ndims)]
     
     objectives = [
-        Objective(name="l_loss", transform=None, description="Sealab", target="min", transform=transform),
+        Objective(name="l_loss", transform=transform, description="Sealab", target="min"),
         Objective(name="is_invalid", constraint=(-torch.inf, 0), transform=None)
     ]
     
