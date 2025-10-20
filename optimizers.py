@@ -10,6 +10,11 @@ from torch.func import vmap, jacrev
 import torch.utils.benchmark as benchmark
 
 import matplotlib.pyplot as plt
+import numpy as np
+
+from blop import DOF, Objective, Agent
+from bluesky import RunEngine
+from databroker import Broker
 
 from critic import Critic
 import random
@@ -28,14 +33,14 @@ from evotorch.logging import StdOutLogger
 
 from evaluate_nn import get_checkpoint_path
 
-def eval_scipy(method, state, niter, device=torch.device('cpu')):
+def eval_scipy(state, niter, seed=42, method="Powell", device=torch.device('cpu')):
     if seed is not None:
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
+    initial_action = torch.rand((4), device=device)
     state = state.to(device)
     critic_net = Critic(device=device)
-    initial_action = torch.rand((4), device=device)
     optimization_values = []
     
     def y_const(x):
@@ -71,12 +76,14 @@ def eval_sa(
     T_end=1e-3,
     cooling_schedule='exp',
     verbose=True,
-    max_init_retries = 100,
 ):
     torch.manual_seed(seed)
-    device = state.device
-    critic_net = Critic(device=device)
+    # initial action
     dim = 4  # action dimension
+    device = state.device
+    x = torch.rand(dim, device=device)
+    critic_net = Critic(device=device)
+    
     callback_times = []
 
     def energy_fn(x):
@@ -84,15 +91,6 @@ def eval_sa(
         value = critic_net(x.view(1, -1), state)
         callback_times.append(time.time())
         return value.mean()
-
-    # Initialize candidate (resample until valid)
-    for _ in range(max_init_retries):
-        x = torch.rand(dim, device=device)
-        current_energy = energy_fn(x)
-        if current_energy < 1000:
-            break
-    else:
-        raise RuntimeError("Failed to sample a valid initial candidate within limit.")
     
     best_x = x.clone()
     current_energy = energy_fn(x)
@@ -149,8 +147,9 @@ def eval_sa(
 
     return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_torch_sgd(state, niter, seed=42, lr=0.1, initial_action=None):
+def eval_gd(state, niter, seed=42, lr=0.1):
     torch.manual_seed(seed)
+    initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)
     if state.device.type == "cuda":
         warmup_gpu(state.device)
 
@@ -158,10 +157,6 @@ def eval_torch_sgd(state, niter, seed=42, lr=0.1, initial_action=None):
         torch.cuda.synchronize()
 
     critic_net = Critic(device=state.device)
-    if initial_action is None:
-        initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)  # Needs grad to be optimized
-    else:
-        initial_action = initial_action.clone().detach().requires_grad_(True)
 
     optimizer = optim.SGD([initial_action], lr=lr)
     optimization_values = []
@@ -182,8 +177,9 @@ def eval_torch_sgd(state, niter, seed=42, lr=0.1, initial_action=None):
     elapsed_time = end_time - start_time
     return torch.stack(optimization_values).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_evotorch_GA(state, niter=1000, seed=42, popsize=200, stdev=0.01, tournament_size=64, eta=8, cross_over_rate=1.0):
+def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01, mutation_rate=0.1, tournament_size=64, sbx_eta=8, sbx_crossover_rate=1.0):
     torch.manual_seed(seed)
+    init_problem_one = state.repeat_interleave(num_candidates, dim=0)
     if state.device.type == "cuda":
         warmup_gpu(state.device)
 
@@ -192,10 +188,10 @@ def eval_evotorch_GA(state, niter=1000, seed=42, popsize=200, stdev=0.01, tourna
     
     logging.getLogger("evotorch").setLevel(logging.WARNING)
     critic_net = Critic(device=state.device)
-    init_problem_one = state.repeat_interleave(popsize, dim=0)
+    
     optimization_values = []
     def critic_problem(x):
-        if cross_over_rate != 1.0:
+        if sbx_crossover_rate != 1.0:
             init_problem = state.repeat_interleave(x.shape[0], dim=0)
         else:
             init_problem = init_problem_one
@@ -215,22 +211,22 @@ def eval_evotorch_GA(state, niter=1000, seed=42, popsize=200, stdev=0.01, tourna
     )
     
     # Works like NSGA-II for multiple objectives
-    ga = SteadyStateGA(prob, popsize=popsize)
+    ga = SteadyStateGA(prob, popsize=num_candidates)
     ga.use(
         SimulatedBinaryCrossOver(
             prob,
             tournament_size=tournament_size,
-            cross_over_rate=cross_over_rate,
-            eta=eta,
+            cross_over_rate=sbx_crossover_rate,
+            eta=sbx_eta,
         )
     )
-    ga.use(GaussianMutation(prob, stdev=stdev))
+    ga.use(GaussianMutation(prob, stdev=mutation_scale, mutation_probability=mutation_rate))
 
     callback_times = []
     start_time = time.time()
     ga.run(niter//2)
-    if cross_over_rate != 1.0:
-        optimization_values = [i[:popsize] for i in optimization_values]
+    if sbx_crossover_rate != 1.0:
+        optimization_values = [i[:num_candidates] for i in optimization_values]
     output = torch.stack(optimization_values)
 
     best_indices = output.mean(dim=-1).argmin(dim=1)
@@ -241,6 +237,87 @@ def eval_evotorch_GA(state, niter=1000, seed=42, popsize=200, stdev=0.01, tourna
     end_time = time.time()
     elapsed_time = end_time - start_time
     return output[torch.arange(niter), best_indices], best_solution, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+
+def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        
+    device = state.device
+
+    # Setup BLoP optimizer components
+    db = Broker.named("temp")
+    RE = RunEngine({})
+    RE.subscribe(db.insert)
+    
+    critic_net = Critic(device=state.device)
+
+    ndims = 4
+    dofs = [DOF(name=str(i), search_domain=(0., 1.)) for i in range(ndims)]
+    
+    objectives = [
+        Objective(name="l_loss", transform=None, description="Sealab", target="min", transform=transform),
+        Objective(name="is_invalid", constraint=(-torch.inf, 0), transform=None)
+    ]
+    
+    # Logging
+    losses_list = []
+    callback_times = []
+    progress = tqdm(total=niter, desc="BLoP Optimization", leave=False)
+
+    def objective_function(action):
+        progress.update(1)
+        
+        # Compute main loss
+        loss = critic_net(action, state.repeat_interleave(action.shape[0], dim=0))
+        losses_list.append(loss)
+        callback_times.append(time.time())
+
+        is_invalid = torch.all(loss == 1000., dim=1).int().tolist()
+        loss = loss.mean(dim=1)
+        loss = loss.tolist()
+        loss = loss if isinstance(loss, list) else [loss]
+        is_invalid = is_invalid if isinstance(is_invalid, list) else [is_invalid]
+        return loss, is_invalid
+
+    def digestion(df):
+        param_tensor = torch.tensor([df[str(i)] for i in range(ndims)], device=device)
+        df["l_loss"], df["is_invalid"] = objective_function(param_tensor.T)
+        return df
+
+    agent = Agent(dofs=dofs, objectives=objectives, digestion=digestion, db=db)
+
+    # Time tracking
+    start_time = time.time()
+
+    # Warmup phase
+    RE(agent.learn("quasi-random", iterations=warm_up_iterations, n=num_candidates))
+
+    # Main optimization phase
+    if ucb_beta is not None:
+        acq = "ucb"
+        RE(agent.learn(acq, iterations=niter-warm_up_iterations, n=num_candidates, beta=ucb_beta))
+    else:
+        RE(agent.learn(acq, iterations=niter-warm_up_iterations, n=num_candidates))
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    # Post-process results
+    losses = torch.tensor(agent.table['metrixs'], device=device)
+    best_losses = torch.cummin(losses, dim=0).values
+    best_idx = losses.argmin()
+
+    best_offsets = torch.tensor([agent.table[str(i)][best_idx] for i in range(ndims)], device=device)
+    best_params = model.rescale_offset(best_offsets) + uncompensated_parameters
+
+    while len(losses_list) < niter:
+        losses_list.append(losses_list[-1])
+    
+    iter_durations = calculate_iter_durations(start_time, callback_times, niter)
+
+    return torch.stack(losses_list[:niter]).squeeze(), elapsed_time, iter_durations
 
 def warmup_gpu(device):
     a = torch.randn(3000, 3000, device=device)
@@ -409,8 +486,6 @@ def print_comparison_table(outputs, network_outputs):
 
         print_line(key, compare, time, metric_sig=metric_sig, time_sig=time_sig, min_mean=min_metric_mean, min_time=min_time_mean)
 
-
-        
 def plot_evaluation_accuracy(outputs, network_outputs):
     str_f = "{:.6f}"
     plt.tight_layout()
@@ -602,10 +677,10 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
         network_times_list.append(elapsed_time)
         
         outputs = {
-            #"Powell’s Method": eval_scipy("Powell", state, niter),
-            #"Simulated Annealing": eval_scipy_annealing(state, niter),
-            #"Gradient Descent": eval_torch_sgd(state, niter),
-            "GA": eval_evotorch_GA(state, niter)
+            #"Powell’s Method": eval_scipy(state, niter),
+            #"Simulated Annealing": eval_sa(state, niter),
+            #"Gradient Descent": eval_gd(state, niter),
+            "GA": eval_ga(state, niter)
         }
         outputs_list.append(outputs)
     outputs = {}

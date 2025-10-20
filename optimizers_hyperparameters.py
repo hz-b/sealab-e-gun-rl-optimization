@@ -83,8 +83,7 @@ def plot_result_dict(result_dict, param_info, optimizer_name, param_name):
 
 
 if __name__ == "__main__":
-    job_id = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-
+    job_id = int(sys.argv[1]) if len(sys.argv) > 1 else 0               
     optimize_dict = {
         "SA": (
             eval_sa,
@@ -107,14 +106,82 @@ if __name__ == "__main__":
                 },
             }
         ),
-        # "GA": (
-        #     eval_ga,
-        #     {
-        #         "population_size": {...},
-        #         ...
-        #     }
-        # )
+        "GD": (
+            eval_gd,
+            {
+                "lr": [1e-7, 1e-6, 0.0001, 0.001, 0.01, 0.1],
+            }
+        ),
+        "GA": (
+            eval_ga,
+            {
+                "num_candidates": {
+                    "values": [10, 100, 200, 500],
+                    "label": r"$p$",
+                     "scale": "log",
+                 },
+                 "tournament_size": {
+                     "values": [1, 3, 5, 10, 15, 20],
+                     "label": r"$k_t$",
+                     "scale": "log",
+                 },
+                 "mutation_rate": {
+                     "values": [0.001, 0.01, 0.05, 0.1, 0.2],
+                     "label": r"$r_m$",
+                     "scale": "log",
+                 },
+                 "mutation_scale": {
+                     "values": [0.001, 0.01, 0.05, 0.1, 0.2],
+                     "label": r"$s_m$",
+                     "scale": "log",
+                 },
+                 "sbx_eta": {
+                     "values": [1, 5, 10, 50, 100],
+                     "label": r"$\eta$",
+                     "scale": "log",
+                     "loc": "lower left",
+                 },
+                 "sbx_crossover_rate": {
+                     "values": [0.1, 0.3, 0.5, 0.8, 0.9],
+                     "label": r"$r_c$",
+                     "scale": "log",
+                     "loc": "lower left",
+                },
+            }
+        ),
+        "BLOP": (
+            eval_blop,
+            {
+                "acq": {
+                    "values": ["ei", "qei", "ucb", "qucb"],
+                    "label": r"$a$",
+                    "scale": "log",
+                    "loc": "lower left",
+                },
+                "warm_up_iterations": {
+                    "values": [50, 100, 200, 300, 380],
+                    "label": r"$l_\mathrm{warm}$",
+                     "scale": "log",
+                },
+                 "transform": {
+                     "values": [None, "log", "normalize", "standardize"],
+                     "label": r"$t$",
+                     "scale": "log",
+                 },
+                 "num_candidates": {
+                     "values": [1, 2, 3],
+                     "label": r"$k_t$",
+                     "scale": "log",
+                 },
+                 "ucb_beta": {
+                     "values": [0.2, 0.4, 1.0, 2.0, 5.0],
+                     "label": r"$\beta$",
+                     "scale": "log",
+                 },
+            }
+        ),
     }
+    
 
     # Flatten job list → [(optimizer_name, eval_fn, param_name, param_info), ...]
     job_list = []
