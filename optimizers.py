@@ -237,7 +237,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01,
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return output[torch.arange(niter), best_indices], best_solution, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    return output[torch.arange(niter), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
     if seed is not None:
