@@ -19,13 +19,13 @@ model, critic_net = load_model_critic_net(torch.device('cuda'))
 ds = RandomIterableDataset(sample_length, 8, 420000000, model.device, fixed_seed=True)
 solution_vector_list = []
 
-for i in tqdm(ds, leave=False):
-    state = i.unsqueeze(0)
+for i,j in enumerate(tqdm(ds, leave=False)):
+    state = j.unsqueeze(0)
     if take_model:
         with torch.no_grad():
             best_solution = model(state)
     else:
-        result, best_solution, _, _ = eval_evotorch_GA(state)
+        result, best_solution, _, _ = eval_ga(state)
         best_solution = best_solution.unsqueeze(0)
     integral_parameters = torch.tensor([[0.4368, 0.7263]], device=state.device)
     solution_vector = critic_net.model.normalizer.unscore_x(torch.hstack([state, integral_parameters, best_solution]))
@@ -62,6 +62,6 @@ result = torch.stack([
 ], dim=0)
 
 
-print("f1-f2", result[0].mean().item(), "[mm]")
-print("f3", result[1].mean().item(), "[mm]")
-print("f4", result[2].mean().item(), "[mm]")
+print("f1 - f2:", f"{result[0].mean().item():.3f} ± {result[0].std().item():.3f} [mm]")
+print("f3     :", f"{result[1].mean().item():.3f} ± {result[1].std().item():.3f} [mm]")
+print("f4     :", f"{result[2].mean().item():.3f} ± {result[2].std().item():.3f} [mm]")
