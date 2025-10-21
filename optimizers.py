@@ -177,7 +177,7 @@ def eval_gd(state, niter, seed=42, lr=0.1):
     best_losses = torch.cummin(torch.tensor(optimization_values, device=state.device), dim=0).values
     return best_losses, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01, mutation_rate=0.1, tournament_size=64, sbx_eta=8, sbx_crossover_rate=1.0):
+def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01, mutation_rate=0.01, tournament_size=20, sbx_eta=5, sbx_crossover_rate=1.0):
     seed_all(seed)
     assert num_candidates > 2 # else we have problems on crossover
     init_problem_one = state.repeat_interleave(num_candidates, dim=0)
@@ -198,7 +198,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01,
             init_problem = init_problem_one
         output = critic_net(x.clone(), init_problem, clamping=False, penalize_forbidden_actions=True)
         scalar = output.mean(dim=1)
-        if x.shape[0] != 2:
+        if x.shape[0] == num_candidates:
             optimization_values.append(output)
         callback_times.append(time.time())
         return scalar
