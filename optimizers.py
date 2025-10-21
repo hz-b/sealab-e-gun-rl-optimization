@@ -291,10 +291,15 @@ def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None
 
     # Warmup phase
     RE(agent.learn("quasi-random", iterations=warm_up_iterations, n=num_candidates))
+    if ucb_beta is not None and acq not in ("qucb", "ucb"):
+        acq = "qucb"
 
+    if num_candidates > 1 and not acq.startswith("q"):
+        acq = "q" + acq
+        print("Switched to quasi-acq, since you picked a num_candidates larger than 1, which only works with quasi-acqs.")
+    
     # Main optimization phase
     if ucb_beta is not None:
-        acq = "ucb"
         RE(agent.learn(acq, iterations=niter-warm_up_iterations, n=num_candidates, beta=ucb_beta))
     else:
         RE(agent.learn(acq, iterations=niter-warm_up_iterations, n=num_candidates))
@@ -303,19 +308,17 @@ def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None
     elapsed_time = end_time - start_time
 
     # Post-process results
-    losses = torch.tensor(agent.table['metrixs'], device=device)
+    losses = torch.tensor(agent.table['l_loss'], device=device)
     best_losses = torch.cummin(losses, dim=0).values
     best_idx = losses.argmin()
 
     best_offsets = torch.tensor([agent.table[str(i)][best_idx] for i in range(ndims)], device=device)
-    best_params = model.rescale_offset(best_offsets) + uncompensated_parameters
 
     while len(losses_list) < niter:
         losses_list.append(losses_list[-1])
     
     iter_durations = calculate_iter_durations(start_time, callback_times, niter)
-
-    return torch.stack(losses_list[:niter]).squeeze(), elapsed_time, iter_durations
+    return torch.stack(losses_list[:niter]).mean(dim=-1).squeeze(-1), elapsed_time, iter_durations
 
 def seed_all(seed):
     random.seed(seed)
