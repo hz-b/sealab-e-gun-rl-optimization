@@ -177,7 +177,7 @@ def eval_gd(state, niter, seed=42, lr=0.1):
     best_losses = torch.cummin(torch.tensor(optimization_values, device=state.device), dim=0).values
     return best_losses, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01, mutation_rate=0.01, tournament_size=20, sbx_eta=5, sbx_crossover_rate=1.0):
+def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01, mutation_rate=0.01, tournament_size=20, sbx_eta=5, sbx_crossover_rate=0.5):
     seed_all(seed)
     assert num_candidates > 2 # else we have problems on crossover
     init_problem_one = state.repeat_interleave(num_candidates, dim=0)
