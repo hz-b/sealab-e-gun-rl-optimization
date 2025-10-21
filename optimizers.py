@@ -24,7 +24,7 @@ from scipy.optimize import minimize, dual_annealing
 from scipy.stats import ttest_rel
 
 from evotorch import Problem
-from evotorch.algorithms import SteadyStateGA, SNES, PGPE
+from evotorch.algorithms import GeneticAlgorithm
 from evotorch.operators import (
     SimulatedBinaryCrossOver,
     GaussianMutation,
@@ -178,6 +178,7 @@ def eval_gd(state, niter, seed=42, lr=0.1):
 
 def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01, mutation_rate=0.1, tournament_size=64, sbx_eta=8, sbx_crossover_rate=1.0):
     seed_all(seed)
+    assert num_candidates > 2 # else we have problems on crossover
     init_problem_one = state.repeat_interleave(num_candidates, dim=0)
     if state.device.type == "cuda":
         warmup_gpu(state.device)
@@ -196,7 +197,8 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01,
             init_problem = init_problem_one
         output = critic_net(x.clone(), init_problem, clamping=False, penalize_forbidden_actions=True)
         scalar = output.mean(dim=1)
-        optimization_values.append(output)
+        if x.shape[0] != 2:
+            optimization_values.append(output)
         callback_times.append(time.time())
         return scalar
                                           
@@ -210,22 +212,21 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01,
     )
     
     # Works like NSGA-II for multiple objectives
-    ga = SteadyStateGA(prob, popsize=num_candidates)
-    ga.use(
-        SimulatedBinaryCrossOver(
-            prob,
-            tournament_size=tournament_size,
-            cross_over_rate=sbx_crossover_rate,
-            eta=sbx_eta,
-        )
-    )
-    ga.use(GaussianMutation(prob, stdev=mutation_scale, mutation_probability=mutation_rate))
+    ga = GeneticAlgorithm(prob, 
+        operators=[
+            SimulatedBinaryCrossOver(
+                    prob,
+                    tournament_size=tournament_size,
+                    cross_over_rate=sbx_crossover_rate,
+                    eta=sbx_eta,
+                ),
+                GaussianMutation(prob, stdev=mutation_scale, mutation_probability=mutation_rate)
+            ],
+        popsize=num_candidates)
 
     callback_times = []
     start_time = time.time()
-    ga.run(niter//2)
-    if sbx_crossover_rate != 1.0:
-        optimization_values = [i[:num_candidates] for i in optimization_values]
+    ga.run(niter)
     output = torch.stack(optimization_values)
 
     best_indices = output.mean(dim=-1).argmin(dim=1)
