@@ -63,7 +63,7 @@ def eval_scipy(state, niter, seed=42, method="Powell", device=torch.device('cpu'
 
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return torch.stack(optimization_values[:niter]).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    return torch.stack(optimization_values[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_sa(
     state,
@@ -226,7 +226,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01,
 
     callback_times = []
     start_time = time.time()
-    ga.run(niter)
+    ga.run(niter//2)
     output = torch.stack(optimization_values)
 
     best_indices = output.mean(dim=-1).argmin(dim=1)
@@ -236,7 +236,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01,
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return output[torch.arange(niter), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    return output.mean(dim=-1)[torch.arange(niter), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
     if seed is not None:
