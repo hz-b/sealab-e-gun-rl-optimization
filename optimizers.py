@@ -35,9 +35,7 @@ from evaluate_nn import get_checkpoint_path
 
 def eval_scipy(state, niter, seed=42, method="Powell", device=torch.device('cpu')):
     if seed is not None:
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
+        seed_all(seed)
     initial_action = torch.rand((4), device=device)
     state = state.to(device)
     critic_net = Critic(device=device)
@@ -77,7 +75,7 @@ def eval_sa(
     cooling_schedule='exp',
     verbose=True,
 ):
-    torch.manual_seed(seed)
+    seed_all(seed)
     # initial action
     dim = 4  # action dimension
     device = state.device
@@ -148,7 +146,7 @@ def eval_sa(
     return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_gd(state, niter, seed=42, lr=0.1):
-    torch.manual_seed(seed)
+    seed_all(seed)
     initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)
     if state.device.type == "cuda":
         warmup_gpu(state.device)
@@ -179,7 +177,7 @@ def eval_gd(state, niter, seed=42, lr=0.1):
     return torch.stack(optimization_values).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01, mutation_rate=0.1, tournament_size=64, sbx_eta=8, sbx_crossover_rate=1.0):
-    torch.manual_seed(seed)
+    seed_all(seed)
     init_problem_one = state.repeat_interleave(num_candidates, dim=0)
     if state.device.type == "cuda":
         warmup_gpu(state.device)
@@ -241,10 +239,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01,
 
 def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
     if seed is not None:
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        
+        seed_all(seed)
     device = state.device
 
     # Setup BLoP optimizer components
@@ -319,6 +314,15 @@ def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None
     iter_durations = calculate_iter_durations(start_time, callback_times, niter)
 
     return torch.stack(losses_list[:niter]).squeeze(), elapsed_time, iter_durations
+
+def seed_all(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
 def warmup_gpu(device):
     a = torch.randn(3000, 3000, device=device)
