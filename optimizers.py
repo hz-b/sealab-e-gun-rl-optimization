@@ -174,8 +174,8 @@ def eval_gd(state, niter, seed=42, lr=0.1):
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    best_losses = torch.cummin(optimization_values, dim=0).values
-    return torch.stack(best_losses), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    best_losses = torch.cummin(torch.tensor(optimization_values, device=state.device), dim=0).values
+    return best_losses, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01, mutation_rate=0.1, tournament_size=64, sbx_eta=8, sbx_crossover_rate=1.0):
     seed_all(seed)
