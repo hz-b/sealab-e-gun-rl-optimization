@@ -25,7 +25,7 @@ for i,j in enumerate(tqdm(ds, leave=False)):
         with torch.no_grad():
             best_solution = model(state)
     else:
-        result, best_solution, _, _ = eval_ga(state)
+        result, _, _, best_solution = eval_ga(state, seed=42+i, return_best=true)
         best_solution = best_solution.unsqueeze(0)
     integral_parameters = torch.tensor([[0.4368, 0.7263]], device=state.device)
     solution_vector = critic_net.model.normalizer.unscore_x(torch.hstack([state, integral_parameters, best_solution]))

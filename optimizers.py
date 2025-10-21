@@ -177,7 +177,7 @@ def eval_gd(state, niter, seed=42, lr=0.1):
     best_losses = torch.cummin(torch.tensor(optimization_values, device=state.device), dim=0).values
     return best_losses, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01, mutation_rate=0.01, tournament_size=20, sbx_eta=5, sbx_crossover_rate=0.5):
+def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01, mutation_rate=0.01, tournament_size=20, sbx_eta=5, sbx_crossover_rate=0.5, return_best=False):
     seed_all(seed)
     assert num_candidates > 2 # else we have problems on crossover
     init_problem_one = state.repeat_interleave(num_candidates, dim=0)
@@ -237,7 +237,11 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return output.mean(dim=-1)[torch.arange(output.shape[0]), best_indices], elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    out = output.mean(dim=-1)[torch.arange(output.shape[0]), best_indices]
+    iter_durations = calculate_iter_durations(start_time, callback_times, niter)
+    if return_best:
+        return out, elapsed_time, iter_durations, best_solution
+    return out, elapsed_time, iter_durations
 
 def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
     if seed is not None:
