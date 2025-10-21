@@ -166,7 +166,7 @@ def eval_gd(state, niter, seed=42, lr=0.1):
         with torch.enable_grad():
             value = critic_net(initial_action.view(1, -1), state)
             loss = value.mean()
-            optimization_values.append(value.detach())
+            optimization_values.append(value.mean().detach())
             loss.backward()
             optimizer.step()
             callback_times.append(time.time())
@@ -174,7 +174,7 @@ def eval_gd(state, niter, seed=42, lr=0.1):
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return torch.stack(optimization_values).squeeze(1), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    return torch.stack(optimization_values), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_ga(state, niter=1000, seed=42, num_candidates=200, mutation_scale=0.01, mutation_rate=0.1, tournament_size=64, sbx_eta=8, sbx_crossover_rate=1.0):
     seed_all(seed)
