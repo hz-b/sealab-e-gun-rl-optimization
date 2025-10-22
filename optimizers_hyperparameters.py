@@ -169,7 +169,7 @@ if __name__ == "__main__":
                      "scale": "log",
                 },
                  "transform": {
-                     "values": [None, "log", "normalize", "standardize"],
+                     "values": [None, "log", "logit", "arctanh"],
                      "label": r"$t$",
                      "scale": "log",
                  },
