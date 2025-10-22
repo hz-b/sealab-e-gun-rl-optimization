@@ -311,18 +311,14 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="
     end_time = time.time()
     elapsed_time = end_time - start_time
 
-    # Post-process results
-    losses = torch.tensor(agent.table['l_loss'], device=device)
-    best_losses = torch.cummin(losses, dim=0).values
-    best_idx = losses.argmin()
-
-    best_offsets = torch.tensor([agent.table[str(i)][best_idx] for i in range(ndims)], device=device)
-
     while len(losses_list) < niter:
         losses_list.append(losses_list[-1])
     
+    best_losses = torch.cummin(torch.stack(losses_list[:niter]).mean(dim=-1).squeeze(-1), dim=0).values
+    
+    
     iter_durations = calculate_iter_durations(start_time, callback_times, niter)
-    return torch.stack(losses_list[:niter]).mean(dim=-1).squeeze(-1), elapsed_time, iter_durations
+    return best_losses, elapsed_time, iter_durations
 
 def seed_all(seed):
     random.seed(seed)
