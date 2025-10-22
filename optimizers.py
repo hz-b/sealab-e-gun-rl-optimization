@@ -243,7 +243,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         return out, elapsed_time, iter_durations, best_solution
     return out, elapsed_time, iter_durations
 
-def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
+def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
     if seed is not None:
         seed_all(seed)
     device = state.device
@@ -304,9 +304,9 @@ def eval_blop(state, niter=1000, warm_up_iterations=20, acq="qei", ucb_beta=None
     
     # Main optimization phase
     if ucb_beta is not None:
-        RE(agent.learn(acq, iterations=niter-warm_up_iterations, n=num_candidates, beta=ucb_beta))
+        RE(agent.learn(acq, iterations=bo_iterations, n=num_candidates, beta=ucb_beta))
     else:
-        RE(agent.learn(acq, iterations=niter-warm_up_iterations, n=num_candidates))
+        RE(agent.learn(acq, iterations=bo_iterations, n=num_candidates))
 
     end_time = time.time()
     elapsed_time = end_time - start_time
