@@ -145,7 +145,7 @@ def eval_sa(
 
     return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_gd(state, niter, seed=42, lr=0.1):
+def eval_gd(state, niter, seed=42, lr=0.01):
     seed_all(seed)
     initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)
     if state.device.type == "cuda":
@@ -169,6 +169,10 @@ def eval_gd(state, niter, seed=42, lr=0.1):
             optimization_values.append(value.mean().detach())
             loss.backward()
             optimizer.step()
+            
+            with torch.no_grad():
+                initial_action.clamp_(0.0, 1.0)
+            
             callback_times.append(time.time())
     if state.device.type == "cuda":
         torch.cuda.synchronize()
