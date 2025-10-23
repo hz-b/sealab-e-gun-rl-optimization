@@ -243,7 +243,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         return out, elapsed_time, iter_durations, best_solution
     return out, elapsed_time, iter_durations
 
-def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="qei", ucb_beta=None, transform=None, seed=None, num_candidates=1, device=None):
+def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="qucb", ucb_beta=2.0, transform=None, seed=None, num_candidates=1, device=None):
     if seed is not None:
         seed_all(seed)
     device = state.device
@@ -303,7 +303,7 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="
         print("Switched to quasi-acq, since you picked a num_candidates larger than 1, which only works with quasi-acqs.")
     
     # Main optimization phase
-    if ucb_beta is not None:
+    if acq in ("qucb", "ucb"):
         RE(agent.learn(acq, iterations=bo_iterations, n=num_candidates, beta=ucb_beta))
     else:
         RE(agent.learn(acq, iterations=bo_iterations, n=num_candidates))

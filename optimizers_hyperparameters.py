@@ -161,27 +161,31 @@ if __name__ == "__main__":
                     "values": ["ei", "qei", "ucb", "qucb"],
                     "label": r"$a$",
                     "scale": "log",
-                    "loc": "lower left",
+                    "loc": "lower right",
                 },
                 "warm_up_iterations": {
                     "values": [50, 100, 200, 300, 380],
                     "label": r"$l_\mathrm{warm}$",
                      "scale": "log",
+                    "loc": "lower right",
                 },
                  "transform": {
                      "values": [None, "log", "logit", "arctanh"],
                      "label": r"$t$",
                      "scale": "log",
+                    "loc": "lower right",
                  },
                  "num_candidates": {
                      "values": [1, 2, 3],
                      "label": r"$k_t$",
                      "scale": "log",
+                    "loc": "lower right",
                  },
                  "ucb_beta": {
                      "values": [0.2, 0.4, 1.0, 2.0, 5.0],
                      "label": r"$\beta$",
                      "scale": "log",
+                    "loc": "lower right",
                  },
             }
         ),
