@@ -227,7 +227,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
 
     callback_times = []
     start_time = time.time()
-    ga.run(niter//2)
+    ga.run(niter)
     output = torch.stack(optimization_values)
 
     best_indices = output.mean(dim=-1).argmin(dim=1)
