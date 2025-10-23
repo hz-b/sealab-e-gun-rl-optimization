@@ -170,7 +170,7 @@ if __name__ == "__main__":
                     "loc": "lower right",
                 },
                  "transform": {
-                     "values": [None, "log", "logit", "arctanh"],
+                     "values": [None, "log"],
                      "label": r"$t$",
                      "scale": "log",
                     "loc": "lower right",
