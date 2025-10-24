@@ -95,7 +95,7 @@ if __name__ == "__main__":
                     "loc": "lower left",
                 },
                 "T_start": {
-                    "values": [0.1, 1.0, 10.0, 100.0],
+                    "values": [1.0, 10.0, 100.0, 1000.0],
                     "label": r"$t_0$",
                     "scale": "log",
                 },
