@@ -71,7 +71,7 @@ def eval_sa(
     seed=42,
     step_size=0.1,
     T_start=1.0,
-    T_end=0.01,
+    T_end=0.1,
     cooling_schedule='exp',
     verbose=True,
 ):
