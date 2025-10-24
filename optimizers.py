@@ -277,14 +277,13 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
         
         # Compute main loss
         loss = critic_net(action, state.repeat_interleave(action.shape[0], dim=0))
-        losses_list.append(loss)
-        callback_times.append(time.time())
-
         is_invalid = torch.all(loss == 1000., dim=1).int().tolist()
-        loss = loss.mean(dim=1)
+        loss = loss.mean()
+        losses_list.append(loss)
         loss = loss.tolist()
         loss = loss if isinstance(loss, list) else [loss]
         is_invalid = is_invalid if isinstance(is_invalid, list) else [is_invalid]
+        callback_times.append(time.time())
         return loss, is_invalid
 
     def digestion(df):
@@ -316,7 +315,7 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
     while len(losses_list) < niter:
         losses_list.append(losses_list[-1])
     
-    best_losses = torch.cummin(torch.stack(losses_list[:niter]).mean(dim=-1).squeeze(-1), dim=0).values
+    best_losses = torch.cummin(torch.stack(losses_list[:niter]), dim=0).values
     
     
     iter_durations = calculate_iter_durations(start_time, callback_times, niter)
