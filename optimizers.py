@@ -278,8 +278,8 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
         # Compute main loss
         loss = critic_net(action, state.repeat_interleave(action.shape[0], dim=0))
         is_invalid = torch.all(loss == 1000., dim=1).int().tolist()
-        loss = loss.mean()
-        losses_list.append(loss)
+        loss = loss.mean(dim=-1)
+        losses_list.append(loss.min())
         loss = loss.tolist()
         loss = loss if isinstance(loss, list) else [loss]
         is_invalid = is_invalid if isinstance(is_invalid, list) else [is_invalid]
