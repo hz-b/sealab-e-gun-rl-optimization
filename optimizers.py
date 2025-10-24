@@ -247,7 +247,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         return out, elapsed_time, iter_durations, best_solution
     return out, elapsed_time, iter_durations
 
-def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="qucb", ucb_beta=2.0, transform=None, seed=None, num_candidates=1, device=None):
+def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="qucb", ucb_beta=2.0, transform="log", seed=None, num_candidates=1, device=None):
     if seed is not None:
         seed_all(seed)
     device = state.device
@@ -299,8 +299,6 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="
 
     # Warmup phase
     RE(agent.learn("quasi-random", iterations=warm_up_iterations, n=num_candidates))
-    if ucb_beta is not None and acq not in ("qucb", "ucb"):
-        acq = "qucb"
 
     if num_candidates > 1 and not acq.startswith("q"):
         acq = "q" + acq
@@ -308,9 +306,9 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=118, acq="
     
     # Main optimization phase
     if acq in ("qucb", "ucb"):
-        RE(agent.learn(acq, iterations=bo_iterations, n=num_candidates, beta=ucb_beta))
+        RE(agent.learn(acq, iterations=bo_iterations-warm_up_iterations, n=num_candidates, beta=ucb_beta))
     else:
-        RE(agent.learn(acq, iterations=bo_iterations, n=num_candidates))
+        RE(agent.learn(acq, iterations=bo_iterations-warm_up_iterations, n=num_candidates))
 
     end_time = time.time()
     elapsed_time = end_time - start_time

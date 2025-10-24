@@ -164,7 +164,7 @@ if __name__ == "__main__":
                     "loc": "lower right",
                 },
                 "warm_up_iterations": {
-                    "values": [32, 64, 100],
+                    "values": [16, 32, 64],
                     "label": r"$l_\mathrm{warm}$",
                      "scale": "log",
                     "loc": "lower right",
