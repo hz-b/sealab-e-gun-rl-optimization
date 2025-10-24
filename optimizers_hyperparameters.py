@@ -60,7 +60,7 @@ def plot_result_dict(result_dict, param_info, optimizer_name, param_name):
     plt.gca().yaxis.set_major_formatter(FuncFormatter(space_thousands))
     plt.tick_params(axis='both', which='major', labelsize=11)
     plt.xlabel("Iteration [#]")
-    plt.ylabel(r"$\mathcal{L}_h(\mathbf{x})$")
+    plt.ylabel(r"$\mathcal{L}_l(\mathbf{x})$")
 
     if "scale" in param_info:
         plt.yscale(param_info["scale"])
@@ -78,7 +78,7 @@ def plot_result_dict(result_dict, param_info, optimizer_name, param_name):
     plt.grid(True)
     plt.tight_layout()
     os.makedirs("outputs", exist_ok=True)
-    plt.savefig(f"outputs/{optimizer_name}_{param_name}.pdf")
+    plt.savefig(f"outputs/{optimizer_name}_{param_name}_srf.pdf")
     plt.show()
 
 
