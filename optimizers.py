@@ -70,7 +70,7 @@ def eval_sa(
     niter,
     seed=42,
     step_size=0.1,
-    T_start=1.0,
+    T_start=1000.0,
     T_end=0.1,
     cooling_schedule='exp',
     verbose=True,
