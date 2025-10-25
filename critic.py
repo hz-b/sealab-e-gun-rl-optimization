@@ -82,7 +82,7 @@ class Critic:
             reward_copy[forbidden_actions_mask] = 1000.
             return reward_copy
 
-        if penalize_invalid and self.validity_classifier is not None:
+        if penalize_invalid and hasattr(self, "validity_classifier"):
             validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(prepared_input))
             validity = (validity_scores > 0.75).squeeze(-1)
             reward_copy = reward.clone()
