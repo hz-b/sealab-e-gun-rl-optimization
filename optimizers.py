@@ -672,7 +672,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     network_outputs_list = []
     network_times_list = []
     model, critic_net = load_model_critic_net(device)
-    ds = RandomIterableDataset(repetitions, 8, 10000000, device)
+    ds = RandomIterableDataset(repetitions, 8, 50000000, device)
 
     for state in tqdm(ds, total=repetitions):
         state = state.unsqueeze(0)
