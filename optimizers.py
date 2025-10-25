@@ -703,7 +703,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
             "SA": eval_sa(state, niter, seed=seed),
             "GD": eval_gd(state, niter, seed=seed),
             "GA": eval_ga(state, niter, seed=seed, sbx_crossover_rate=0.3),
-            "BLOP": eval_blop(state, niter, seed=seed)
+            "BLOP": eval_blop(state, niter, seed=seed, warm_up_iterations=16)
         }
         outputs_list.append(outputs)
     outputs = {}
