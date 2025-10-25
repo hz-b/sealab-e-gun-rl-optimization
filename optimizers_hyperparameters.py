@@ -175,12 +175,6 @@ if __name__ == "__main__":
                      "scale": "log",
                     "loc": "lower right",
                  },
-                 "num_candidates": {
-                     "values": [1, 2, 3],
-                     "label": r"$k_t$",
-                     "scale": "log",
-                    "loc": "lower right",
-                 },
                  "ucb_beta": {
                      "values": [0.2, 0.4, 1.0, 2.0, 5.0],
                      "label": r"$\beta$",

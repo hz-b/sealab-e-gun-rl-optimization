@@ -674,7 +674,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     model, critic_net = load_model_critic_net(device)
     ds = RandomIterableDataset(repetitions, 8, 50000000, device)
 
-    for state in tqdm(ds, total=repetitions):
+    for seed, state in enumerate(tqdm(ds, total=repetitions)):
         state = state.unsqueeze(0)
 
         if state.device.type == "cuda":
