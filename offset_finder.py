@@ -73,7 +73,7 @@ def optimize_evotorch_ga(
 
         with torch.no_grad():
             validity_scores = validity_classifier(model.normalizer.unscore_x(x + uncompensated_parameters))  # shape: (N, 1)
-            validity = (validity_scores > 0.5).squeeze(-1)  # shape: (N,)
+            validity = (validity_scores > 0.75).squeeze(-1)  # shape: (N,)
             total_loss = total_loss + 1.0 * ~validity
     
         return total_loss
