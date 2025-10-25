@@ -38,12 +38,12 @@ def eval_scipy(state, niter, seed=42, method="Powell", device=torch.device('cpu'
         seed_all(seed)
     initial_action = torch.rand((4), device=device)
     state = state.to(device)
-    critic_net = Critic(device=device)
+    critic_net = load_critic(device)
     optimization_values = []
     
     def y_const(x):
         value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state)
-        optimization_values.append(value)
+        optimization_values.append(value.mean(-1).mean(-1))
         callback_times.append(time.time())
         return value.mean().item()
 
@@ -80,7 +80,7 @@ def eval_sa(
     dim = 4  # action dimension
     device = state.device
     x = torch.rand(dim, device=device)
-    critic_net = Critic(device=device)
+    critic_net = load_critic(device)
     
     callback_times = []
 
@@ -162,7 +162,7 @@ def eval_gd(state, niter, seed=42, lr=0.01):
     if state.device.type == "cuda":
         torch.cuda.synchronize()
 
-    critic_net = Critic(device=state.device)
+    critic_net = load_critic(state.device)
 
     optimizer = optim.SGD([initial_action], lr=lr)
     optimization_values = []
@@ -200,7 +200,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         torch.cuda.synchronize()
     
     logging.getLogger("evotorch").setLevel(logging.WARNING)
-    critic_net = Critic(device=state.device)
+    critic_net = load_critic(state.device)
     
     optimization_values = []
     def critic_problem(x):
@@ -265,7 +265,7 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
     RE = RunEngine({})
     RE.subscribe(db.insert)
     
-    critic_net = Critic(device=state.device)
+    critic_net = load_critic(state.device)
 
     ndims = 4
     dofs = [DOF(name=str(i), search_domain=(0., 1.)) for i in range(ndims)]
@@ -422,7 +422,7 @@ def plot_time_comparison(outputs, network_outputs=None, real_time=False):
     
     for i, (key, (value, _, time_vector)) in enumerate(outputs.items()):
         # Mean over all features
-        tracked = value.mean(-1)  # (runs, steps)
+        tracked = value  # (runs, steps)
     
         # Compute the cumulative minimum for each run
         best_so_far = torch.cummin(tracked, dim=1).values  # shape: (runs, steps)
@@ -444,8 +444,8 @@ def plot_time_comparison(outputs, network_outputs=None, real_time=False):
 
 def print_time_to_match(outputs, network_outputs):
     for key, (value, _, _) in outputs.items():
-        compare = value.mean(2).min(dim=1).values
-        cummin, _ = torch.cummin(value.mean(2), dim=1)
+        compare = value.min(dim=1).values
+        cummin, _ = torch.cummin(value, dim=1)
         matching_bool = cummin.cpu() <= network_outputs[0].mean(1).unsqueeze(1).cpu()
         matching_bool_sum = matching_bool.any(dim=1)
         iterations_until_matched = (~matching_bool).sum(dim=1)
@@ -482,7 +482,7 @@ def print_comparison_table(outputs, network_outputs):
     time_means.append(decision_time.mean().item())
 
     for key, (value, time, _) in outputs.items():
-        compare = value.mean(2).min(dim=1).values
+        compare = value.min(dim=1).values
         metric_means.append(compare.mean().item())
         time_means.append(time.mean().item())
 
@@ -494,7 +494,7 @@ def print_comparison_table(outputs, network_outputs):
 
     # Print comparisons
     for key, (value, time, _) in outputs.items():
-        compare = value.mean(2).min(dim=1).values
+        compare = value.min(dim=1).values
 
         # Significance tests
         metric_p = ttest_rel(decision_tensor.cpu(), compare.cpu()).pvalue
@@ -522,7 +522,7 @@ def plot_evaluation_accuracy(outputs, network_outputs):
         lower_limit = 0.03 #2e-1
         upper_limit = 9e-3
         bins = torch.logspace(torch.log10(torch.tensor(upper_limit)), torch.log10(torch.tensor(lower_limit)), 50)
-        hist = ax.hist2d(network_outputs[0].mean(1).cpu(), value.mean(2).cpu()[:,-1], bins = bins.cpu(), vmin = 0, vmax = 25, cmap='hot')
+        hist = ax.hist2d(network_outputs[0].mean(1).cpu(), value.cpu()[:,-1], bins = bins.cpu(), vmin = 0, vmax = 25, cmap='hot')
         ax.plot([lower_limit, upper_limit], [lower_limit, upper_limit], 'tab:cyan')
         if i+1 != 1:
             ax.axes.get_yaxis().set_visible(False)
@@ -548,7 +548,7 @@ def plot_comparison_scatter(outputs, network_outputs=None):
 
     # Others
     for key, (value, time, _) in outputs.items():
-        compare = value.mean(2).min(dim=1).values
+        compare = value.min(dim=1).values
         mean_mse = compare.mean().item()
         mean_time = time.mean().item()
         keys.append(key)
@@ -660,13 +660,16 @@ def jac_std_avg(model, stddev=.2):
     plt.tight_layout()
     plt.savefig(f'outputs/jac_std_{stddev}.pdf', dpi=300, bbox_inches="tight")
 
+def load_critic(device):
+    return Critic(device=device)
+
 def load_model_critic_net(device, path='lw11wj74'):
-    critic_net = Critic(device=device)
+    critic_net = load_critic(device)
     path = get_checkpoint_path(path)
     model = RandomModel.load_from_checkpoint(path, critic_net=critic_net,  map_location=device).to(device)
     model.eval()
     return model, critic_net
-    
+
 def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     outputs_list = []
     network_outputs_list = []
@@ -700,7 +703,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
             "SA": eval_sa(state, niter, seed=seed),
             "GD": eval_gd(state, niter, seed=seed),
             "GA": eval_ga(state, niter, seed=seed, sbx_crossover_rate=0.3),
-            "BLOP": eval_blop(state, niter, seed=seed, ucb_beta=0.4)
+            "BLOP": eval_blop(state, niter, seed=seed)
         }
         outputs_list.append(outputs)
     outputs = {}
