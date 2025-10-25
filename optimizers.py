@@ -132,7 +132,15 @@ def eval_sa(
 
         # Optional per-interval logging
         if verbose and t % (niter // 10) == 0 and t > 0:
-            print(f"[SA] Iter {t:4d} | T={T:.4g} | Current Energy={current_energy.item():.6f} | Best={best_energy.item():.6f}")
+            current_acceptance_rate = accepted / t
+            print(
+                f"[SA] Iter {t:4d} | "
+                f"T={T:.4g} | "
+                f"Current Energy={current_energy.item():.6f} | "
+                f"Best={best_energy.item():.6f} | "
+                f"Acceptance Rate={current_acceptance_rate * 100:.2f}%"
+            )
+
 
     end_time = time.time()
     elapsed_time = end_time - start_time
