@@ -696,10 +696,11 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
         network_times_list.append(elapsed_time)
         
         outputs = {
-            #"Powell’s Method": eval_scipy(state, niter),
-            #"Simulated Annealing": eval_sa(state, niter),
-            #"Gradient Descent": eval_gd(state, niter),
-            "GA": eval_ga(state, niter)
+            "Powell’s Method": eval_scipy(state, niter, seed=seed),
+            "SA": eval_sa(state, niter, seed=seed),
+            "GD": eval_gd(state, niter, seed=seed),
+            "GA": eval_ga(state, niter, seed=seed, sbx_crossover_rate=0.3),
+            "BLOP": eval_ga(state, niter, seed=seed, ucb_beta=0.4)
         }
         outputs_list.append(outputs)
     outputs = {}
@@ -716,7 +717,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     return outputs, network_outputs, model, critic_net
 
 if __name__ == "__main__":
-    outputs, network_outputs, model, critic_net = evaluation(repetitions=1000, niter=50)
+    outputs, network_outputs, model, critic_net = evaluation(repetitions=10, niter=1000)
     
     plot_time_comparison(outputs, network_outputs)
 
