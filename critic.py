@@ -75,20 +75,17 @@ class Critic:
             output = output.clone()
             output[limit_y_mask] = rescored_fine_model_outputs
         reward =  self.calculate_reward(output, norm=norm)
+        reward_copy = reward.clone()
         if penalize_forbidden_actions:
             forbidden_actions_mask = (expanded_actions < 0.) | (expanded_actions > 1.)
             forbidden_actions_mask = forbidden_actions_mask.any(dim=1)
-            reward_copy = reward.clone()
             reward_copy[forbidden_actions_mask] = 1000.
-            return reward_copy
 
         if penalize_invalid and hasattr(self, "validity_classifier"):
             validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(prepared_input))
             validity = (validity_scores > 0.75).squeeze(-1)
-            reward_copy = reward.clone()
-            reward_copy[~validity] = 1000.
-            return reward_copy
-        return reward
+            reward_copy[~validity] += 1.
+        return reward_copy
 
     def expand_action_states(self, action_batch, state_batch):
         batch_size = state_batch.shape[0]
