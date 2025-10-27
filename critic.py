@@ -84,7 +84,7 @@ class Critic:
         if penalize_invalid and hasattr(self, "validity_classifier"):
             validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(prepared_input))
             validity = (validity_scores > 0.5).squeeze(-1)
-            reward_copy[~validity] += 1000.
+            reward_copy[~validity] += 0.1
         return reward_copy
 
     def expand_action_states(self, action_batch, state_batch):
