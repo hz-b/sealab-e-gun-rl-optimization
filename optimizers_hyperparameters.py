@@ -158,7 +158,7 @@ if __name__ == "__main__":
             eval_blop,
             {
                 "acq": {
-                    "values": ["ei", "qei", "ucb", "qucb"],
+                    "values": ["ei", "lcb"],
                     "label": r"$a$",
                     "scale": "log",
                     "loc": "lower right",
