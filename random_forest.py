@@ -158,6 +158,10 @@ def main():
     for text in disp.text_.ravel():
         num = int(text.get_text())
         text.set_text(f"{num:,}".replace(",", "\u202f"))  # thin non-breaking spaces
+    if disp.im_.colorbar is not None:
+        cbar = disp.im_.colorbar
+        cbar.ax.yaxis.set_major_formatter(FuncFormatter(space_thousands))
+
     plt.savefig("outputs/random_forest_cm_aggregated.pdf", bbox_inches="tight")
 
 if __name__ == "__main__":
