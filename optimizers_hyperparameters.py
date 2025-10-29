@@ -100,7 +100,7 @@ if __name__ == "__main__":
                 },
                 "T_start": {
                     "values": [10.0, 100.0, 1000.0, 5000.0],
-                    "label": r"$t_0$",
+                    "label": r"$t_\mathrm{start}$",
                     "scale": "log",
                 },
                 "cooling_schedule": {
