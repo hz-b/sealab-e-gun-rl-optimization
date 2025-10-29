@@ -6,6 +6,7 @@ from tqdm.auto import tqdm
 import os
 import sys
 from matplotlib.ticker import FuncFormatter
+import matplotlib.colors as mcolors
 
 def space_thousands(x, pos):
     return f"{int(x):,}".replace(",", "\u202f")
@@ -42,6 +43,9 @@ def eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=5, 
 
 def plot_result_dict(result_dict, param_info, optimizer_name, param_name):
     plt.figure(figsize=(8, 3))
+    default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    no_red_colors = [c for c in default_colors if not mcolors.to_rgba(c)[:3] == mcolors.to_rgba('red')[:3]]
+    plt.gca().set_prop_cycle(color=no_red_colors)
     display_name = param_info.get("label", param_name)
     param_results = result_dict[param_name]
     all_means = []
