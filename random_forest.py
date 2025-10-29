@@ -10,6 +10,11 @@ from sklearn.metrics import (
 )
 import matplotlib.pyplot as plt
 from surrogate import H5Dataset  # Your custom dataset
+from matplotlib.ticker import FuncFormatter
+
+
+def space_thousands(x, pos):
+    return f"{int(x):,}".replace(",", "\u202f")
 
 def load_and_split_dataset(data_path, seed=None):
     full_dataset = H5Dataset(data_path, raw=True)
@@ -66,7 +71,7 @@ def train_random_forest(data_path, run_idx=1, seed=None, fit=True):
     print(f"[Run {run_idx}] Model: {model_path}")
     return model_path, splits["X_test"], splits["y_test"]
 
-def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.75, plot=True):
+def test_random_forest(model_path, X_test, y_test, run_idx=1, threshold=0.5, plot=True):
     clf = joblib.load(model_path)
     y_probs = clf.predict_proba(X_test)[:, 1]
     y_pred = (y_probs > threshold).astype(int)
@@ -135,7 +140,7 @@ def main():
     for run_idx in range(runs):
         model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42 + run_idx)
         model_path = f"outputs/random_forest_model_run{run_idx}.joblib"
-        metrics = test_random_forest(model_path, X_test, y_test, run_idx=run_idx, threshold=0.75)
+        metrics = test_random_forest(model_path, X_test, y_test, run_idx=run_idx, threshold=0.5)
         
 
         # Accumulate confusion matrix
@@ -144,10 +149,15 @@ def main():
     # === Final aggregated confusion matrix ===
     total_cm = total_cm/runs
     fig, ax = plt.subplots(figsize=(4, 3))  # Change (width, height) as needed
+    plt.gca().xaxis.set_major_formatter(FuncFormatter(space_thousands))
+    plt.gca().yaxis.set_major_formatter(FuncFormatter(space_thousands))
 
 
     disp = ConfusionMatrixDisplay(confusion_matrix=total_cm.astype(int), display_labels=["Invalid", "Valid"])
     disp.plot(cmap=plt.cm.Blues, values_format='d', ax=ax)
+    for text in disp.text_.ravel():
+        num = int(text.get_text())
+        text.set_text(f"{num:,}".replace(",", "\u202f"))  # thin non-breaking spaces
     plt.savefig("outputs/random_forest_cm_aggregated.pdf", bbox_inches="tight")
 
 if __name__ == "__main__":
