@@ -14,7 +14,7 @@ def space_thousands(x, pos):
 def eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=5, niter=100, init_seed=8000000):
     result_dict = {}
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ds = RandomIterableDataset(repetitions, 8, 50000000, device)
+    ds = RandomIterableDataset(repetitions, 8, 50000000, device, fixed_seed=True)
 
     result_dict[param_name] = {}
 
