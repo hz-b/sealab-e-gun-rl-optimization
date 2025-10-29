@@ -180,7 +180,7 @@ if __name__ == "__main__":
                     "loc": "lower right",
                  },
                  "ucb_beta": {
-                     "values": [0.2, 0.4, 1.0, 2.0, 5.0],
+                     "values": [0.2, 1.0, 2.0, 5.0],
                      "label": r"$\beta$",
                      "scale": "log",
                     "loc": "lower right",

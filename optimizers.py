@@ -153,7 +153,7 @@ def eval_sa(
 
     return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_gd(state, niter, seed=42, lr=0.01):
+def eval_gd(state, niter, seed=42, lr=0.1):
     seed_all(seed)
     initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)
     if state.device.type == "cuda":
@@ -255,7 +255,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         return out, elapsed_time, iter_durations, best_solution
     return out, elapsed_time, iter_durations
 
-def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="lcb", ucb_beta=0.4, transform="log", seed=None, num_candidates=1, device=None):
+def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="lcb", ucb_beta=5.0, transform="log", seed=None, num_candidates=1, device=None):
     if seed is not None:
         seed_all(seed)
     device = state.device
@@ -707,7 +707,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
             "SA": eval_sa(state, niter, seed=seed),
             "GD": eval_gd(state, niter, seed=seed),
             "GA": eval_ga(state, niter, seed=seed, sbx_crossover_rate=0.3),
-            "BLOP": eval_blop(state, niter, seed=seed, warm_up_iterations=16)
+            "BLOP": eval_blop(state, niter, seed=seed, ucb_beta=5)
         }
         outputs_list.append(outputs)
     outputs = {}
