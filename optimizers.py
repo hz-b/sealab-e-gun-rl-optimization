@@ -667,7 +667,7 @@ def jac_std_avg(model, stddev=.2):
 def load_critic(device):
     return Critic(device=device)
 
-def load_model_critic_net(device, path='lw11wj74'):
+def load_model_critic_net(device, path='zez828tm'):
     critic_net = load_critic(device)
     path = get_checkpoint_path(path)
     model = RandomModel.load_from_checkpoint(path, critic_net=critic_net,  map_location=device).to(device)
