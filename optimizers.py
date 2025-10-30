@@ -679,7 +679,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     network_outputs_list = []
     network_times_list = []
     model, critic_net = load_model_critic_net(device)
-    ds = RandomIterableDataset(repetitions, 8, 50000000, device)
+    ds = RandomIterableDataset(repetitions, 8, 60000000, device)
 
     for seed, state in enumerate(tqdm(ds, total=repetitions)):
         state = state.unsqueeze(0)
@@ -724,7 +724,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     return outputs, network_outputs, model, critic_net
 
 if __name__ == "__main__":
-    outputs, network_outputs, model, critic_net = evaluation(repetitions=10, niter=1000)
+    outputs, network_outputs, model, critic_net = evaluation(repetitions=100, niter=1000)
     
     plot_time_comparison(outputs, network_outputs)
 

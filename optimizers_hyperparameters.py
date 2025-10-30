@@ -6,7 +6,7 @@ from tqdm.auto import tqdm
 import os
 import sys
 from matplotlib.ticker import FuncFormatter
-import matplotlib.colors as mcolors
+from matplotlib.pylab import cycler
 
 def space_thousands(x, pos):
     return f"{int(x):,}".replace(",", "\u202f")
@@ -44,8 +44,8 @@ def eval_iterative_single_param(eval_fn, param_name, param_info, repetitions=5, 
 def plot_result_dict(result_dict, param_info, optimizer_name, param_name):
     plt.figure(figsize=(8, 3))
     default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    no_red_colors = [c for c in default_colors if not mcolors.to_rgba(c)[:3] == mcolors.to_rgba('red')[:3]]
-    plt.gca().set_prop_cycle(color=no_red_colors)
+    custom_colors = default_colors[:2] + default_colors[3:]
+    plt.rcParams['axes.prop_cycle'] = cycler(color=custom_colors)
     display_name = param_info.get("label", param_name)
     param_results = result_dict[param_name]
     all_means = []
@@ -62,9 +62,9 @@ def plot_result_dict(result_dict, param_info, optimizer_name, param_name):
 
     plt.gca().xaxis.set_major_formatter(FuncFormatter(space_thousands))
     plt.gca().yaxis.set_major_formatter(FuncFormatter(space_thousands))
-    plt.tick_params(axis='both', which='major', labelsize=11)
-    plt.xlabel("Iteration [#]")
-    plt.ylabel(r"$\mathcal{L}_l(\mathbf{x})$")
+    plt.tick_params(axis='both', which='major', labelsize=12)
+    plt.xlabel("Iteration [#]", fontsize=16)
+    plt.ylabel(r"$\mathcal{L}_l(\mathbf{x})$", fontsize=16)
 
     if "scale" in param_info:
         plt.yscale(param_info["scale"])
@@ -77,7 +77,7 @@ def plot_result_dict(result_dict, param_info, optimizer_name, param_name):
         plt.ylim(bottom=ymin)
 
     loc = param_info.get("loc", "best")
-    plt.legend(fontsize=11, loc=loc)
+    plt.legend(fontsize=12, loc=loc)
 
     plt.grid(True)
     plt.tight_layout()
