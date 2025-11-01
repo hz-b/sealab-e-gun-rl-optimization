@@ -89,7 +89,7 @@ class RandomModel(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x = batch
-        rewards_mean = self.critic_net(self(x), x, penalize_invalid=False, norm=self.loss_norm)
+        rewards_mean = self.critic_net(self(x), x, penalize_invalid=True, norm=self.loss_norm)
         self.log("x_pos_loss", rewards_mean[:,0].mean())
         self.log("y_pos_loss", rewards_mean[:,1].mean())
         self.log("size_loss", rewards_mean[:,2].mean())
@@ -100,10 +100,15 @@ class RandomModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        rewards_mean = self.critic_net(self(batch), batch, penalize_invalid=False, norm=self.loss_norm).mean()
+        rewards_mean = self.critic_net(self(batch), batch, penalize_invalid=True, norm=self.loss_norm).mean()
         self.log("val_loss", rewards_mean, prog_bar=True)
         return rewards_mean
 
+    def test_step(self, batch, batch_idx):
+        rewards_mean = self.critic_net(self(batch), batch, penalize_invalid=True, norm=self.loss_norm).mean()
+        self.log("test_loss", rewards_mean, prog_bar=True)
+        return rewards_mean
+        
     def configure_optimizers(self):
         if self.optimizer == "adam_w":
             optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate)
@@ -132,12 +137,13 @@ class RandomModel(L.LightningModule):
         return optimizer
 
 class RandomDataModule(L.LightningDataModule):
-    def __init__(self, input_dim=8, output_dim=4, num_samples=100000, batch_size=32, seed=42, device=None, val_samples=100000, val_seed=20000042):
+    def __init__(self, input_dim=8, output_dim=4, num_samples=100000, batch_size=32, seed=42, device=None, val_samples=20000, val_seed=20000042, test_samples=20000, test_seed=9000000000):
         super().__init__()
         if device is None:
             device = torch.device('cuda')
         self.dataset = RandomIterableDataset(num_samples, input_dim, seed, device)
         self.val_dataset = RandomIterableDataset(val_samples, input_dim, val_seed, device, fixed_seed=True)
+        self.test_dataset = RandomIterableDataset(test_samples, input_dim, test_seed, device, fixed_seed=True)
         self.batch_size = batch_size
 
     def train_dataloader(self):
@@ -146,13 +152,16 @@ class RandomDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size)
 
+    def test_dataloader(self):
+        return DataLoader(self.test_dataset, batch_size=self.batch_size)
+        
 class CustomCLI(LightningCLI):
     def add_arguments_to_parser(self, parser):
         # Allow CLI override of W&B settings
         parser.add_argument("--wandb_name", type=str, default="ref6")
         parser.add_argument("--wandb_project", type=str, default="berlinpro_decision_model")
         parser.add_argument("--offline", action="store_true", help="Run W&B in offline mode")
-        parser.set_defaults(trainer={"max_epochs": 250, "log_every_n_steps": 500})
+        parser.set_defaults(trainer={"max_epochs": 250, "check_val_every_n_epoch":10, "log_every_n_steps": 500})
 
     def before_fit(self):
         # Set W&B logger
