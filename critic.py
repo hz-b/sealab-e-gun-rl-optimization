@@ -62,7 +62,7 @@ class Critic:
         maxs = torch.tensor([self.output_max[2].item(), self.output_max[3].item(), diff_max], device=reward.device)
         return (maxs - mins) * reward
 
-    def compute_integrated_reward(self, expanded_actions, expanded_states, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False):
+    def compute_integrated_reward(self, expanded_actions, expanded_states, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False, return_validity=False):
         merged_input = torch.cat([expanded_states, expanded_actions], dim=1)
         unscored_merged_input = self.model.normalizer.unscore_x(merged_input)
         prepared_input = self.model.normalizer.score_x(JointModel.prepare_sample(unscored_merged_input))
@@ -85,6 +85,8 @@ class Critic:
             validity_scores = self.validity_classifier(self.model.normalizer.unscore_x(prepared_input))
             validity = (validity_scores > 0.5).squeeze(-1)
             reward_copy[~validity] += 0.1
+        if return_validity:
+            return reward_copy, validity
         return reward_copy
 
     def expand_action_states(self, action_batch, state_batch):
@@ -103,7 +105,7 @@ class Critic:
         expanded_actions = action_batch.repeat_interleave(self.N2, dim=0)
         return expanded_actions, expanded_states
 
-    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False):
+    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False, eval_mode=False):
         """
         action_batch: (batch_size, 4)
         state_batch: (batch_size, 1, 8)
@@ -115,11 +117,16 @@ class Critic:
 
         expanded_actions, expanded_states = self.expand_action_states(action_batch, state_batch)
         # Get reward
-        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_invalid=penalize_invalid, penalize_forbidden_actions=penalize_forbidden_actions)  # (batch_size * N^2, 3)
-        rewards = reward_output.view(state_batch.shape[0], self.N2, 3)
+        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_invalid=penalize_invalid, penalize_forbidden_actions=penalize_forbidden_actions, return_validity=eval_mode)  # (batch_size * N^2, 3)
+        if eval_mode:
+            reward_output, validity = reward_output
+            reward_output = reward_output[validity]
+        rewards = reward_output.view(state_batch.shape[0], -1, 3)
 
         # Aggregate
         rewards_mean = rewards.mean(dim=1)  # (batch_size, 3)
+        if eval_mode:
+            return rewards_mean, validity
         return rewards_mean
         
 

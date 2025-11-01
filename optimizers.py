@@ -33,16 +33,20 @@ from evotorch.logging import StdOutLogger
 
 from evaluate_nn import get_checkpoint_path
 
-def eval_scipy(state, niter, seed=42, method="Powell", device=torch.device('cpu')):
+def eval_scipy(state, niter, seed=42, method="Powell", device=torch.device('cpu'), eval_mode=False):
     if seed is not None:
         seed_all(seed)
     initial_action = torch.rand((4), device=device)
     state = state.to(device)
     critic_net = load_critic(device)
     optimization_values = []
+    validity_values = []
     
     def y_const(x):
-        value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state)
+        value = critic_net(torch.tensor(x, device=device, dtype=torch.float).view(1, -1), state, eval_mode=eval_mode)
+        if eval_mode:
+            value, validity = value
+            validity_values.append(validity)
         optimization_values.append(value.mean(-1).mean(-1))
         callback_times.append(time.time())
         return value.mean().item()
@@ -63,7 +67,11 @@ def eval_scipy(state, niter, seed=42, method="Powell", device=torch.device('cpu'
 
     end_time = time.time()
     elapsed_time = end_time - start_time
-    return torch.stack(optimization_values[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
+    best_losses = torch.stack(optimization_values[:niter])
+    if eval_mode:
+        _, best_idx = best_losses.min(dim=0)
+        best_losses = best_losses, torch.stack(validity_values[:niter])[best_idx]
+    return best_losses, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
 def eval_sa(
     state,
@@ -74,6 +82,7 @@ def eval_sa(
     T_end=0.1,
     cooling_schedule='exp',
     verbose=True,
+    eval_mode=False,
 ):
     seed_all(seed)
     # initial action
@@ -83,10 +92,14 @@ def eval_sa(
     critic_net = load_critic(device)
     
     callback_times = []
+    validity_values = []
 
     def energy_fn(x):
         x = x.clamp(0.0, 1.0)
-        value = critic_net(x.view(1, -1), state)
+        value = critic_net(x.view(1, -1), state, eval_mode=eval_mode)
+        if eval_mode:
+            value, validity = value
+            validity_values.append(validity)
         callback_times.append(time.time())
         return value.mean()
     
@@ -150,10 +163,13 @@ def eval_sa(
         print(f"[SA] Finished in {elapsed_time:.2f} seconds")
         print(f"[SA] Final best energy: {best_energy.item():.6f}")
         print(f"[SA] Acceptance rate: {acceptance_rate * 100:.2f}%")
+    best_losses = torch.tensor(best_losses[:niter])
+    if eval_mode:
+        _, best_idx = best_losses.min(dim=0)
+        best_losses = best_losses, torch.stack(validity_values[:niter])[best_idx]
+    return best_losses, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-    return torch.tensor(best_losses[:niter]), elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
-
-def eval_gd(state, niter, seed=42, lr=0.1):
+def eval_gd(state, niter, seed=42, lr=0.1, eval_mode=False):
     seed_all(seed)
     initial_action = torch.rand((1, 4), device=state.device, requires_grad=True)
     if state.device.type == "cuda":
@@ -166,13 +182,17 @@ def eval_gd(state, niter, seed=42, lr=0.1):
 
     optimizer = optim.SGD([initial_action], lr=lr)
     optimization_values = []
+    validity_values = []
 
     start_time = time.time()
     callback_times = []
     for _ in range(niter):
         optimizer.zero_grad()
         with torch.enable_grad():
-            value = critic_net(initial_action.view(1, -1), state)
+            value = critic_net(initial_action.view(1, -1), state, eval_mode=eval_mode)
+            if eval_mode:
+                value, validity = value
+                validity_values.append(validity)
             loss = value.mean()
             optimization_values.append(value.mean().detach())
             loss.backward()
@@ -187,9 +207,12 @@ def eval_gd(state, niter, seed=42, lr=0.1):
     end_time = time.time()
     elapsed_time = end_time - start_time
     best_losses = torch.cummin(torch.tensor(optimization_values, device=state.device), dim=0).values
+    if eval_mode:
+        _, best_idx = best_losses.min(dim=0)
+        best_losses = best_losses, torch.stack(validity_values[:niter])[best_idx]
     return best_losses, elapsed_time, calculate_iter_durations(start_time, callback_times, niter)
 
-def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01, mutation_rate=0.01, tournament_size=20, sbx_eta=5, sbx_crossover_rate=0.5, return_best=False):
+def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01, mutation_rate=0.01, tournament_size=20, sbx_eta=5, sbx_crossover_rate=0.5, return_best=False, eval_mode=False):
     seed_all(seed)
     assert num_candidates > 2 # else we have problems on crossover
     init_problem_one = state.repeat_interleave(num_candidates, dim=0)
@@ -203,15 +226,20 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
     critic_net = load_critic(state.device)
     
     optimization_values = []
+    validity_values = []
     def critic_problem(x):
         if sbx_crossover_rate != 1.0:
             init_problem = state.repeat_interleave(x.shape[0], dim=0)
         else:
             init_problem = init_problem_one
-        output = critic_net(x.clone(), init_problem, clamping=False, penalize_forbidden_actions=True)
+        output = critic_net(x.clone(), init_problem, clamping=False, penalize_forbidden_actions=True, eval_mode=eval_mode)
+        if eval_mode:
+            output, validity = output
         scalar = output.mean(dim=1)
         if x.shape[0] == num_candidates:
             optimization_values.append(output)
+            if eval_mode:
+                validity_values.append(validity)
         callback_times.append(time.time())
         return scalar
                                           
@@ -249,13 +277,16 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         torch.cuda.synchronize()
     end_time = time.time()
     elapsed_time = end_time - start_time
-    out = output.mean(dim=-1)[torch.arange(output.shape[0]), best_indices]
+    best_losses = output.mean(dim=-1)[torch.arange(output.shape[0]), best_indices]
     iter_durations = calculate_iter_durations(start_time, callback_times, niter)
     if return_best:
         return out, elapsed_time, iter_durations, best_solution
-    return out, elapsed_time, iter_durations
+    if eval_mode:
+        _, best_idx = best_losses.min(dim=0)
+        best_losses = best_losses, torch.stack(validity_values[:niter])[best_idx]
+    return best_losses, elapsed_time, iter_durations
 
-def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="lcb", ucb_beta=5.0, transform="log", seed=None, num_candidates=1, device=None):
+def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="lcb", ucb_beta=5.0, transform="log", seed=None, num_candidates=1, device=None, eval_mode=False):
     if seed is not None:
         seed_all(seed)
     device = state.device
@@ -281,6 +312,7 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
     
     # Logging
     losses_list = []
+    validity_values = []
     callback_times = []
     progress = tqdm(total=niter, desc="BLoP Optimization", leave=False)
 
@@ -288,7 +320,10 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
         progress.update(1)
         
         # Compute main loss
-        loss = critic_net(action, state.repeat_interleave(action.shape[0], dim=0))
+        loss = critic_net(action, state.repeat_interleave(action.shape[0], dim=0), eval_mode=eval_mode)
+        if eval_mode:
+            loss, validity = loss
+            validity_values.append(validity)
         is_invalid = torch.all(loss == 1000., dim=1).int().tolist()
         loss = loss.mean(dim=-1)
         losses_list.append(loss.min())
@@ -328,9 +363,9 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
         losses_list.append(losses_list[-1])
     
     best_losses = torch.cummin(torch.stack(losses_list[:niter]), dim=0).values
-    
-    
     iter_durations = calculate_iter_durations(start_time, callback_times, niter)
+    if eval_mode:
+        best_losses = best_losses, torch.stack(validity_values[:niter])[-1]
     return best_losses, elapsed_time, iter_durations
 
 def seed_all(seed):
@@ -415,16 +450,21 @@ def plot_time_comparison(outputs, network_outputs=None, real_time=False):
     else:
         x = range(l)
 
+    # Track global min for y-axis
+    global_min = float('inf')
+
     if network_outputs is not None:
         mean = network_outputs[0].mean()
         std = network_outputs[0].mean(dim=1).std()
-        
+        mean_val = mean.cpu().item()
+        global_min = min(global_min, mean_val)
+
         ax.plot(x, [mean.cpu() for i in x], label="Decision Model", color=clrs[0], linestyle=(0, (5, 1)), zorder=4)
         ax.fill_between(x, (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[0])
         ax.scatter([0], mean.cpu(), color=clrs[0], s=100, zorder=5)
     
     
-    for i, (key, (value, _, time_vector)) in enumerate(outputs.items()):
+    for i, (key, (value, _, _, time_vector)) in enumerate(outputs.items()):
         # Mean over all features
         tracked = value  # (runs, steps)
     
@@ -434,6 +474,8 @@ def plot_time_comparison(outputs, network_outputs=None, real_time=False):
         # Mean and std across runs
         mean = best_so_far.mean(dim=0)  # shape: (steps,)
         std = best_so_far.std(dim=0)
+        mean_min = mean.min().cpu().item()
+        global_min = min(global_min, mean_min)
 
         if real_time:
             x = time_vector.mean(dim=0).cpu()
@@ -443,11 +485,17 @@ def plot_time_comparison(outputs, network_outputs=None, real_time=False):
         ax.plot(x, mean.cpu(), label=key, color=clrs[i+1], linestyle='solid')
         ax.fill_between(x, (mean - std).cpu(), (mean + std).cpu(), alpha=0.25, facecolor=clrs[i+1])
 
+    # Set lower y-limit based on global_min (ignore std)
+    if global_min < float('inf'):
+        padding_factor = 0.9  # 10% padding below
+        ax.set_ylim(bottom=global_min * padding_factor)
+
     ax.legend(fontsize=fontsize_small)
     plt.savefig('outputs/time_comparison.pdf', dpi=300, bbox_inches="tight")
 
+
 def print_time_to_match(outputs, network_outputs):
-    for key, (value, _, _) in outputs.items():
+    for key, (value, _, _, _) in outputs.items():
         compare = value.min(dim=1).values
         cummin, _ = torch.cummin(value, dim=1)
         matching_bool = cummin.cpu() <= network_outputs[0].mean(1).unsqueeze(1).cpu()
@@ -455,59 +503,103 @@ def print_time_to_match(outputs, network_outputs):
         iterations_until_matched = (~matching_bool).sum(dim=1)
         print(key, "& $", matching_bool_sum.sum().item(),'/',len(compare), "$ &", f"${iterations_until_matched.float().mean().item():.2f}" , '\\pm', f"{iterations_until_matched.float().std().item():.2f}$ \\\\")
 
-def print_comparison_table(outputs, network_outputs):
-    def format_value(val, min_val):
-        s = f"{val:.6f}"
-        return f"\\mathbf{{{s}}}" if val == min_val else s
+from scipy.stats import ttest_rel
 
-    def print_line(key, tensor, time, metric_sig=False, time_sig=False, min_mean=None, min_time=None):
+def print_comparison_table(outputs, network_outputs):
+    def format_value(val, min_val, higher_is_better=False):
+        s = f"{val:.6f}"
+        # Bold the "best" (lowest or highest) value depending on metric direction
+        if higher_is_better:
+            return f"\\mathbf{{{s}}}" if val == max_val else s
+        else:
+            return f"\\mathbf{{{s}}}" if val == min_val else s
+
+    def print_line(key, tensor, validity, time,
+                   metric_sig=False, validity_sig=False, time_sig=False,
+                   min_mean=None, min_validity=None, min_time=None):
         mean_val = tensor.mean().item()
         std_val = tensor.std().item()
+
+        valid_mean = validity.mean().item()
+        valid_std = validity.std().item()
+
         time_mean = time.mean().item()
         time_std = time.std().item()
 
         mean_str = format_value(mean_val, min_mean)
+        valid_str = format_value(valid_mean*100, min_validity)
         time_str = format_value(time_mean, min_time)
 
         # Add significance markers
         metric_dagger = "\\dagger" if metric_sig else ""
+        validity_dagger = "\\dagger" if validity_sig else ""
         time_dagger = "\\dagger" if time_sig else ""
-        print(f"{key} & ${mean_str}\\pm{std_val:.4f}{metric_dagger}$ & ${time_str}\\pm{time_std:.4f}{time_dagger}$ \\\\")
+
+        print(
+            f"{key} & "
+            f"${mean_str}\\pm{std_val:.4f}{metric_dagger}$ & "
+            f"${valid_str}\\pm{valid_std*100:.4f}{validity_dagger}$ & "
+            f"${time_str}\\pm{time_std:.4f}{time_dagger}$ \\\\"
+        )
 
     metric_means = []
+    validity_means = []
     time_means = []
-    
+
     # Extract decision model data
     decision_tensor = network_outputs[0].mean(1)
-    decision_time = network_outputs[1]
+    decision_validity = (~network_outputs[1]).float().mean(dim=-1)
+    decision_time = network_outputs[2]
 
-    # Store means for bolding
     metric_means.append(decision_tensor.mean().item())
+    validity_means.append(decision_validity.mean().item())
     time_means.append(decision_time.mean().item())
 
-    for key, (value, time, _) in outputs.items():
+    # Store others
+    for key, (value, validity, time, _) in outputs.items():
         compare = value.min(dim=1).values
+        invalidities = (~validity).float().mean(dim=-1)
+
         metric_means.append(compare.mean().item())
+        validity_means.append(invalidities.mean().item())
         time_means.append(time.mean().item())
 
+    # Find bests for bolding
     min_metric_mean = min(metric_means)
+    min_validity_mean = min(validity_means)
     min_time_mean = min(time_means)
 
-    # Print Decision Model (no significance comparison needed)
-    print_line('Decision Model', decision_tensor, decision_time, min_mean=min_metric_mean, min_time=min_time_mean)
+    # Print header
+    print("\\textbf{Model} & \\textbf{Metric} & \\textbf{Invalid [\\%]} & \\textbf{Time} \\\\")
+
+    # Print Decision Model (baseline)
+    print_line(
+        'Decision Model', decision_tensor, decision_validity, decision_time,
+        min_mean=min_metric_mean, min_validity=min_validity_mean, min_time=min_time_mean
+    )
 
     # Print comparisons
-    for key, (value, time, _) in outputs.items():
+    for key, (value, validity, time, _) in outputs.items():
         compare = value.min(dim=1).values
+        invalidities = (~validity).float().mean(dim=-1)
+        
+        print(decision_tensor.shape, compare.shape)
 
         # Significance tests
         metric_p = ttest_rel(decision_tensor.cpu(), compare.cpu()).pvalue
+        validity_p = ttest_rel(decision_validity.cpu(), invalidities.cpu()).pvalue
         time_p = ttest_rel(decision_time.cpu(), time.cpu()).pvalue
 
         metric_sig = metric_p <= 0.01
+        validity_sig = validity_p <= 0.01
         time_sig = time_p <= 0.01
 
-        print_line(key, compare, time, metric_sig=metric_sig, time_sig=time_sig, min_mean=min_metric_mean, min_time=min_time_mean)
+        print_line(
+            key, compare, invalidities, time,
+            metric_sig=metric_sig, validity_sig=validity_sig, time_sig=time_sig,
+            min_mean=min_metric_mean, min_validity=min_validity_mean, min_time=min_time_mean
+        )
+
 
 def plot_evaluation_accuracy(outputs, network_outputs):
     str_f = "{:.6f}"
@@ -516,7 +608,7 @@ def plot_evaluation_accuracy(outputs, network_outputs):
     plt.rcParams.update({'font.size': 20})
     ax_list = []
     
-    for i, (key, (value, _, _)) in enumerate(outputs.items()):
+    for i, (key, (value, _, _, _)) in enumerate(outputs.items()):
         ax = fig.add_subplot(1,len(outputs),i+1)
         ax_list.append(ax)
         ax.set_title(key)
@@ -545,13 +637,13 @@ def plot_comparison_scatter(outputs, network_outputs=None):
     if network_outputs is not None:
         # Baseline: Deep Learning model
         dl_mse = network_outputs[0].mean(1)
-        dl_time = network_outputs[1].mean()
+        dl_time = network_outputs[2].mean()
         keys.append("Decision Model")
         times.append(dl_time.item())
         mses.append(dl_mse.mean().item())
 
     # Others
-    for key, (value, time, _) in outputs.items():
+    for key, (value, _, time, _) in outputs.items():
         compare = value.min(dim=1).values
         mean_mse = compare.mean().item()
         mean_time = time.mean().item()
@@ -699,21 +791,21 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
         end_time = time.time()
         elapsed_time = end_time - start_time
             
-        network_outputs_list.append(critic_net(policy_action, state))
+        network_outputs_list.append(critic_net(policy_action, state, eval_mode=True))
         network_times_list.append(elapsed_time)
         
         outputs = {
-            "Powell’s Method": eval_scipy(state, niter, seed=seed),
-            "SA": eval_sa(state, niter, seed=seed),
-            "GD": eval_gd(state, niter, seed=seed),
-            "GA": eval_ga(state, niter, seed=seed, sbx_crossover_rate=0.3),
-            "BLOP": eval_blop(state, niter, seed=seed, ucb_beta=5)
+            "Powell’s Method": eval_scipy(state, niter, seed=seed, eval_mode=True),
+            "SA": eval_sa(state, niter, seed=seed, eval_mode=True),
+            "GD": eval_gd(state, niter, seed=seed, eval_mode=True),
+            "GA": eval_ga(state, niter, seed=seed, eval_mode=True, sbx_crossover_rate=0.3),
+            "BLOP": eval_blop(state, niter, seed=seed, eval_mode=True, ucb_beta=5)
         }
         outputs_list.append(outputs)
     outputs = {}
     for key in outputs_list[0]:
-        outputs[key] = torch.stack([entry[key][0] for entry in outputs_list], dim=0), torch.tensor([entry[key][1] for entry in outputs_list], device=device), torch.tensor([entry[key][2] for entry in outputs_list], device=device)
-    network_outputs = torch.stack(network_outputs_list).squeeze(1), torch.tensor(network_times_list, device=device)
+        outputs[key] = torch.stack([entry[key][0][0] for entry in outputs_list], dim=0), torch.stack([entry[key][0][1] for entry in outputs_list], dim=0), torch.tensor([entry[key][1] for entry in outputs_list], device=device), torch.tensor([entry[key][2] for entry in outputs_list], device=device)
+    network_outputs = torch.stack([entry[0] for entry in network_outputs_list]).squeeze(1), torch.stack([entry[1] for entry in network_outputs_list]).squeeze(1), torch.tensor(network_times_list, device=device)
 
     with open("outputs/eval_dict.pkl", "wb") as f:
         pickle.dump(outputs, f)
@@ -724,7 +816,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     return outputs, network_outputs, model, critic_net
 
 if __name__ == "__main__":
-    outputs, network_outputs, model, critic_net = evaluation(repetitions=100, niter=1000)
+    outputs, network_outputs, model, critic_net = evaluation(repetitions=1000, niter=150)
     
     plot_time_comparison(outputs, network_outputs)
 
