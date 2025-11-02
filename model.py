@@ -161,7 +161,7 @@ class CustomCLI(LightningCLI):
         parser.add_argument("--wandb_name", type=str, default="ref6")
         parser.add_argument("--wandb_project", type=str, default="berlinpro_decision_model")
         parser.add_argument("--offline", action="store_true", help="Run W&B in offline mode")
-        parser.set_defaults(trainer={"max_epochs": 250, "check_val_every_n_epoch":10, "log_every_n_steps": 500})
+        parser.set_defaults(trainer={"max_epochs": 250, "check_val_every_n_epoch":1, "log_every_n_steps": 500})
 
     def before_fit(self):
         # Set W&B logger
