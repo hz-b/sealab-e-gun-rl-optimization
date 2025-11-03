@@ -99,7 +99,7 @@ if __name__ == "__main__":
                     "loc": "lower left",
                 },
                 "T_start": {
-                    "values": [0.001, 0.01, 1.0],
+                    "values": [1e-4, 0.001, 0.01, 0.1],
                     "label": r"$t_\mathrm{start}$",
                     "scale": "log",
                 },
