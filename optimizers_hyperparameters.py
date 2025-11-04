@@ -114,7 +114,7 @@ if __name__ == "__main__":
             eval_gd,
             {
                 "lr": {
-                    "values": [1e-4, 0.001, 0.1, 0.2, 0.3],
+                    "values": [0.001, 0.1, 0.3, 0.5, 0.8],
                     "label": r"$\eta$",
                     "scale": "log",
                     "loc": "lower left",
