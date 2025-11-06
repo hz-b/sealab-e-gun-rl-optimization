@@ -816,7 +816,8 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
     return outputs, network_outputs, model, critic_net
 
 if __name__ == "__main__":
-    outputs, network_outputs, model, critic_net = evaluation(repetitions=1000, niter=150)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    outputs, network_outputs, model, critic_net = evaluation(repetitions=1000, niter=150, device=device)
     
     plot_time_comparison(outputs, network_outputs)
 
