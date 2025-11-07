@@ -280,7 +280,7 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
     best_losses = output.mean(dim=-1)[torch.arange(output.shape[0]), best_indices]
     iter_durations = calculate_iter_durations(start_time, callback_times, niter)
     if return_best:
-        return out, elapsed_time, iter_durations, best_solution
+        return best_losses, elapsed_time, iter_durations, best_solution
     if eval_mode:
         _, best_idx = best_losses.min(dim=0)
         best_losses = best_losses, torch.stack(validity_values[:niter])[best_idx]
