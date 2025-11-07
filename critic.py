@@ -120,13 +120,26 @@ class Critic:
         reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_invalid=penalize_invalid, penalize_forbidden_actions=penalize_forbidden_actions, return_validity=eval_mode)  # (batch_size * N^2, 3)
         if eval_mode:
             reward_output, validity = reward_output
-            reward_output = reward_output[validity]
-        rewards = reward_output.view(state_batch.shape[0], -1, 3)
 
+            batch_size = state_batch.shape[0]
+
+            # reshape to group per batch
+            rewards = reward_output.view(batch_size, -1, 3)
+            validity = validity.view(batch_size, -1)
+
+            validity_expanded = validity.unsqueeze(-1)
+            reward_valid = rewards * validity_expanded
+
+            sum_valid = reward_valid.sum(dim=1)
+            count_valid = validity_expanded.sum(dim=1).clamp(min=1)
+            mean_valid = sum_valid / count_valid
+
+            return mean_valid, validity
+
+        rewards = reward_output.view(state_batch.shape[0], -1, 3)
         # Aggregate
         rewards_mean = rewards.mean(dim=1)  # (batch_size, 3)
-        if eval_mode:
-            return rewards_mean, validity
+        
         return rewards_mean
         
 
