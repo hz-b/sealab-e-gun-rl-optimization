@@ -797,7 +797,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
         outputs = {
             "Powell’s Method": eval_scipy(state, niter, seed=seed, eval_mode=True),
             "SA": eval_sa(state, niter, seed=seed, eval_mode=True),
-            "GD": eval_gd(state, niter, seed=seed, eval_mode=True, lr=2.0),
+            "GD": eval_gd(state, niter, seed=seed, eval_mode=True, lr=1.0),
             "GA": eval_ga(state, niter, seed=seed, eval_mode=True, mutation_rate=0.2, tournament_size=1, sbx_crossover_rate=0.9, sbx_eta=1),
             "BLOP": eval_blop(state, niter, seed=seed, eval_mode=True, ucb_beta=20)
         }
