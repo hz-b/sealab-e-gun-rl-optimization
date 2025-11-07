@@ -28,7 +28,7 @@ if arg == "1" or arg == "0":
             with torch.no_grad():
                 best_solution = model(state)
         else:
-            result, _, _, best_solution = eval_ga(state, seed=42+i, return_best=True)
+            result, _, _, best_solution = eval_ga(state, 1000, seed=1000+i, eval_mode=False, mutation_rate=0.2, tournament_size=1, sbx_crossover_rate=0.9, sbx_eta=1, return_best=True)
             best_solution = best_solution.unsqueeze(0)
         integral_parameters = torch.tensor([[0.4368, 0.7263]], device=state.device)
         solution_vector = critic_net.model.normalizer.unscore_x(torch.hstack([state, integral_parameters, best_solution]))
