@@ -183,23 +183,19 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     critic_net = Critic(device=device)
     model_paths = {
-        "Reference": "fsbk3ov8",
-        "ScaledSigmoid": "di9ooxpy",
-        "Lin_4": "ehu98hh8",
-        "Lin_5": "hhea93wl",
-        "Log_4": "5wj45jrp",
-        "Mish": "33vt5lny",
-        "Small": "mb1yxtff",
-        "Big": "iwm6scit",
-        "BatchNorm": "1ckq79p7",
-        "BS_16": "0sirvbb5",
-        "BS_64": "j6t73cyh",
-        "LR_1e-3": "1ncaidn5",
-        "LR_1e-5": "5ln6pbe1",
-        "L2": "959mgp0l",
-        "AdamW": "2xh15ihg",
-        "Plat_3": "5dwghjbi",
-        "Plat_5": "vv4ng2p2",
+        "Reference": "z5ndb7c9",
+        "ScaledSigmoid": "6ih5iaw2",
+        "Lin_4": "lhra4o23",
+        "Big": "86u4blbz",
+        "BatchNorm": "z4swhmc7",
+        "BS_16": "z8v38uuj",
+        "BS_64": "hkjpwqz1",
+        "LR_1e-3": "qufmsjhg",
+        "LR_1e-5": "uiwyn6wz",
+        "L2": "3g9usf2b",
+        "AdamW": "wxep1y4t",
+        "Plat_3": "4n0k39pg",
+        "Plat_5": "94gt6or3",
          }
     
     model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_decision_model")
