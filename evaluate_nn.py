@@ -89,7 +89,7 @@ def evaluate(seed_shift, model, critic_net, num_samples=100000):
     output_list = []
     batch_size = 32
     seed = 42+50000000*seed_shift
-    datamodule = RandomDataModule(num_samples, model.input_dim, model.output_dim, batch_size, seed, device=critic_net.model.device, val_samples=100000, val_seed=seed+20000000)
+    datamodule = RandomDataModule(num_samples=num_samples, input_dim=model.input_dim, output_dim=model.output_dim, batch_size=batch_size, seed=seed, device=critic_net.model.device, val_samples=100000, val_seed=seed+20000000)
 
     for state in tqdm(datamodule.train_dataloader(), leave=False):
         with torch.no_grad():
