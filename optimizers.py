@@ -249,8 +249,8 @@ def eval_ga(state, niter=1000, seed=42, num_candidates=100, mutation_scale=0.01,
         if x.shape[0] == num_candidates:
             optimization_values.append(value)
             if eval_mode:
-                validity_values.append(validity)
                 batch_best_idx = value.mean(-1).min(dim=-1).indices
+                validity_values.append(validity[batch_best_idx])
                 complete_loss_values.append(value[batch_best_idx])
         callback_times.append(time.time())
         return scalar
@@ -449,7 +449,7 @@ def plot_time_comparison(outputs, network_outputs=None, real_time=False):
     if real_time:
         x_string = "Elapsed time [s]"
     else:
-        x_string = "Evaluation count [#]"
+        x_string = "Iteration [#]"
     ax.set_xlabel(x_string, fontsize=fontsize)
     ax.set_ylabel("Mean $\\mathcal{L}_l$", fontsize=fontsize)
     ax.set_yscale('log')
@@ -521,13 +521,10 @@ def print_time_to_match(outputs, network_outputs):
 from scipy.stats import ttest_rel
 
 def print_comparison_table(outputs, network_outputs):
-    def format_value(val, min_val, higher_is_better=False):
-        s = f"{val:.6f}"
+    def format_value(val, min_val, decimals=6):
+        s = f"{val:.{decimals}f}"
         # Bold the "best" (lowest or highest) value depending on metric direction
-        if higher_is_better:
-            return f"\\mathbf{{{s}}}" if val == max_val else s
-        else:
-            return f"\\mathbf{{{s}}}" if val == min_val else s
+        return f"\\mathbf{{{s}}}" if val == min_val else s
 
     def print_line(key, tensor, validity, time,
                    metric_sig=False, validity_sig=False, time_sig=False,
@@ -542,9 +539,8 @@ def print_comparison_table(outputs, network_outputs):
         time_std = time.std().item()
 
         mean_str = format_value(mean_val, min_mean)
-        valid_str = format_value(valid_mean*100, min_validity)
+        valid_str = format_value(valid_mean*100, min_validity, decimals=2)
         time_str = format_value(time_mean, min_time)
-
         # Add significance markers
         metric_dagger = "\\dagger" if metric_sig else ""
         validity_dagger = "\\dagger" if validity_sig else ""
@@ -553,7 +549,7 @@ def print_comparison_table(outputs, network_outputs):
         print(
             f"{key} & "
             f"${mean_str}\\pm{std_val:.4f}{metric_dagger}$ & "
-            f"${valid_str}\\pm{valid_std*100:.4f}{validity_dagger}$ & "
+            f"${valid_str}\\pm{valid_std*100:.2f}{validity_dagger}$ & "
             f"${time_str}\\pm{time_std:.4f}{time_dagger}$ \\\\"
         )
 
@@ -600,7 +596,7 @@ def print_comparison_table(outputs, network_outputs):
         
         # Significance tests
         metric_p = ttest_rel(decision_tensor.cpu(), compare.cpu()).pvalue
-        validity_p = ttest_rel(decision_validity.cpu(), invalidities.cpu()).pvalue
+        validity_p = ttest_rel(decision_validity.cpu(), invalidities.cpu().squeeze(-1)).pvalue
         time_p = ttest_rel(decision_time.cpu(), time.cpu()).pvalue
 
         metric_sig = metric_p <= 0.01
@@ -612,6 +608,40 @@ def print_comparison_table(outputs, network_outputs):
             metric_sig=metric_sig, validity_sig=validity_sig, time_sig=time_sig,
             min_mean=min_metric_mean, min_validity=min_validity_mean, min_time=min_time_mean
         )
+        
+def complete_loss_table(outputs, network_outputs, critic_net):
+    # Insert the "Decision Model" entry first
+    outputs = {'Decision Model': (None, network_outputs[0], None, None, None), **outputs}
+    rows = []
+    
+    for key, val in outputs.items():
+        data = critic_net.denormalize_reward(val[1])
+        mean = data.mean(dim=0)
+        std = data.std(dim=0)
+
+        # reorder: [2, 0, 1]
+        order = [2, 0, 1]
+        mean = mean[order]
+        std = std[order]
+
+        # format as "$mean ± std$"
+        formatted = [f"${m:.2f} \\pm {s:.2f}$" for m, s in zip(mean, std)]
+        rows.append(f"{key} & " + " & ".join(formatted) + r" \\")
+    
+    # header, body, footer
+    header = (
+        r"\begin{tabular}{lccc}" "\n"
+        r"\toprule" "\n"
+        r"Method & $\mathcal{L}_1$ & $\mathcal{L}_2$ & $\mathcal{L}_3$ \\" "\n"
+        r"\midrule"
+    )
+
+    body = "\n".join(rows)
+    footer = r"\bottomrule" "\n" r"\end{tabular}"
+
+    table = "\n".join([header, body, footer])
+
+    print(table)
 
 
 def plot_evaluation_accuracy(outputs, network_outputs):
@@ -841,6 +871,8 @@ if __name__ == "__main__":
     print_time_to_match(outputs, network_outputs)
 
     print_comparison_table(outputs, network_outputs)
+    
+    complete_loss_table(outputs, network_outputs, critic_net)
 
     jac_std_avg(model)
 
