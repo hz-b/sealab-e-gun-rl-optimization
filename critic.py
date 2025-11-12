@@ -6,6 +6,7 @@ from random_forest import RandomForest
 
 class Critic:
     def __init__(self, surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/u7up111w/checkpoints/epoch=9999-step=7290000.ckpt', validity_classifier='outputs/random_forest_model_run0.joblib', fine_surrogate='outputs/berlinpro_surrogate/berlinpro_surrogate/ogc5jqhn/checkpoints/epoch=9999-step=5060000.ckpt', device=None, grid_resolution=20):
+        #validity_classifier = 'outputs/berlinpro_validity/berlinpro_validity/3e000mhh/checkpoints/epoch=2-step=18.ckpt'
         self.model = BerlinPro2.load_from_checkpoint(surrogate, map_location=device)
         self.model.freeze()
         self.model.eval()
@@ -105,7 +106,7 @@ class Critic:
         expanded_actions = action_batch.repeat_interleave(self.N2, dim=0)
         return expanded_actions, expanded_states
 
-    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False, eval_mode=False):
+    def __call__(self, action_batch, state_batch, clamping=True, norm=torch.abs, penalize_invalid=True, penalize_forbidden_actions=False, eval_mode=False, return_validity=False):
         """
         action_batch: (batch_size, 4)
         state_batch: (batch_size, 1, 8)
@@ -117,10 +118,10 @@ class Critic:
 
         expanded_actions, expanded_states = self.expand_action_states(action_batch, state_batch)
         # Get reward
-        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_invalid=penalize_invalid, penalize_forbidden_actions=penalize_forbidden_actions, return_validity=eval_mode)  # (batch_size * N^2, 3)
-        if eval_mode:
+        reward_output = self.compute_integrated_reward(expanded_actions, expanded_states, norm=norm, penalize_invalid=penalize_invalid, penalize_forbidden_actions=penalize_forbidden_actions, return_validity=(eval_mode or return_validity))  # (batch_size * N^2, 3)
+        if (eval_mode or return_validity):
             reward_output, validity = reward_output
-
+        if eval_mode:
             batch_size = state_batch.shape[0]
 
             # reshape to group per batch
@@ -133,13 +134,13 @@ class Critic:
             sum_valid = reward_valid.sum(dim=1)
             count_valid = validity_expanded.sum(dim=1).clamp(min=1)
             mean_valid = sum_valid / count_valid
-
             return mean_valid, validity
 
         rewards = reward_output.view(state_batch.shape[0], -1, 3)
         # Aggregate
         rewards_mean = rewards.mean(dim=1)  # (batch_size, 3)
-        
+        if return_validity:
+            return rewards_mean, validity
         return rewards_mean
         
 

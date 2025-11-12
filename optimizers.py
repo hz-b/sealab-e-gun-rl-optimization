@@ -320,11 +320,11 @@ def eval_blop(state, niter=1000, warm_up_iterations=32, bo_iterations=150, acq="
         progress.update(1)
         
         # Compute main loss
-        loss = critic_net(action, state.repeat_interleave(action.shape[0], dim=0), eval_mode=eval_mode)
+        loss, validity = critic_net(action, state.repeat_interleave(action.shape[0], dim=0), eval_mode=eval_mode, return_validity=True)
         if eval_mode:
-            loss, validity = loss
             validity_values.append(validity)
-        is_invalid = torch.all(loss == 1000., dim=1).int().tolist()
+        invalidity = ~validity[0].any()
+        is_invalid = invalidity.int().tolist()
         loss = loss.mean(dim=-1)
         losses_list.append(loss.min())
         loss = loss.tolist()
@@ -817,7 +817,7 @@ def evaluation(repetitions=1000, niter=100, device=torch.device('cuda')):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    outputs, network_outputs, model, critic_net = evaluation(repetitions=1000, niter=150, device=device)
+    outputs, network_outputs, model, critic_net = evaluation(repetitions=100, niter=150, device=device)
     
     plot_time_comparison(outputs, network_outputs)
 
