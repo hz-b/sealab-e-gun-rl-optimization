@@ -132,37 +132,50 @@ class RandomForest:
         probs = self.clf.predict_proba(x_np)[:, 1]
         return torch.tensor(probs, device=x.device)
 
-def main():
+def main(load_existing_models=True):
     data_path = "datasets/bbp_ds_2m_merged_v2.h5"
     runs = 3
     total_cm = np.zeros((2, 2), dtype=int)  # Assuming binary classification
 
     for run_idx in range(runs):
-        model_path, X_test, y_test = train_random_forest(data_path, run_idx=run_idx, seed=42 + run_idx)
         model_path = f"outputs/random_forest_model_run{run_idx}.joblib"
+
+        if load_existing_models and os.path.exists(model_path):
+            print(f"Loading existing model for run {run_idx}: {model_path}")
+            # You’d need X_test and y_test to still be generated the same way
+            _, X_test, y_test = train_random_forest(
+                data_path, run_idx=run_idx, seed=42 + run_idx, train_model=False
+            )
+        else:
+            print(f"Training new model for run {run_idx}...")
+            model_path, X_test, y_test = train_random_forest(
+                data_path, run_idx=run_idx, seed=42 + run_idx
+            )
+
         metrics = test_random_forest(model_path, X_test, y_test, run_idx=run_idx, threshold=0.5)
-        
 
         # Accumulate confusion matrix
         total_cm += metrics["confusion_matrix"]
 
     # === Final aggregated confusion matrix ===
-    total_cm = total_cm/runs
-    fig, ax = plt.subplots(figsize=(4, 3))  # Change (width, height) as needed
+    total_cm = total_cm / runs
+
+    fig, ax = plt.subplots(figsize=(4, 3))
     plt.gca().xaxis.set_major_formatter(FuncFormatter(space_thousands))
     plt.gca().yaxis.set_major_formatter(FuncFormatter(space_thousands))
-
 
     disp = ConfusionMatrixDisplay(confusion_matrix=total_cm.astype(int), display_labels=["Invalid", "Valid"])
     disp.plot(cmap=plt.cm.Blues, values_format='d', ax=ax)
     for text in disp.text_.ravel():
         num = int(text.get_text())
         text.set_text(f"{num:,}".replace(",", "\u202f"))  # thin non-breaking spaces
+
     if disp.im_.colorbar is not None:
         cbar = disp.im_.colorbar
         cbar.ax.yaxis.set_major_formatter(FuncFormatter(space_thousands))
 
     plt.savefig("outputs/random_forest_cm_aggregated.pdf", bbox_inches="tight")
+    print("Saved aggregated confusion matrix: outputs/random_forest_cm_aggregated.pdf")
 
 if __name__ == "__main__":
-    main()
+    main(load_existing_models=True)
