@@ -144,7 +144,7 @@ def main(load_existing_models=True):
             print(f"Loading existing model for run {run_idx}: {model_path}")
             # You’d need X_test and y_test to still be generated the same way
             _, X_test, y_test = train_random_forest(
-                data_path, run_idx=run_idx, seed=42 + run_idx, train_model=False
+                data_path, run_idx=run_idx, seed=42 + run_idx, fit=False
             )
         else:
             print(f"Training new model for run {run_idx}...")
