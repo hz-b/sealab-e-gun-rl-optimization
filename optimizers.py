@@ -538,17 +538,17 @@ def print_comparison_table(outputs, network_outputs):
         time_mean = time.mean().item()
         time_std = time.std().item()
 
-        mean_str = format_value(mean_val, min_mean)
+        mean_str = format_value(mean_val*10000, min_mean, decimals=2)
         valid_str = format_value(valid_mean*100, min_validity, decimals=2)
         time_str = format_value(time_mean, min_time)
         # Add significance markers
-        metric_dagger = "\\dagger" if metric_sig else ""
-        validity_dagger = "\\dagger" if validity_sig else ""
-        time_dagger = "\\dagger" if time_sig else ""
+        metric_dagger = "^\\dagger" if metric_sig else ""
+        validity_dagger = "^\\dagger" if validity_sig else ""
+        time_dagger = "^\\dagger" if time_sig else ""
 
         print(
             f"{key} & "
-            f"${mean_str}\\pm{std_val:.4f}{metric_dagger}$ & "
+            f"${mean_str}\\pm{std_val*10000:.2f}{metric_dagger}$ & "
             f"${valid_str}\\pm{valid_std*100:.2f}{validity_dagger}$ & "
             f"${time_str}\\pm{time_std:.4f}{time_dagger}$ \\\\"
         )
@@ -599,36 +599,69 @@ def print_comparison_table(outputs, network_outputs):
         validity_p = ttest_rel(decision_validity.cpu(), invalidities.cpu().squeeze(-1)).pvalue
         time_p = ttest_rel(decision_time.cpu(), time.cpu()).pvalue
 
-        metric_sig = metric_p <= 0.01
-        validity_sig = validity_p <= 0.01
-        time_sig = time_p <= 0.01
+        metric_sig = metric_p <= 0.05
+        validity_sig = validity_p <= 0.05
+        time_sig = time_p <= 0.05
 
         print_line(
             key, compare, invalidities, time,
             metric_sig=metric_sig, validity_sig=validity_sig, time_sig=time_sig,
             min_mean=min_metric_mean, min_validity=min_validity_mean, min_time=min_time_mean
         )
-        
+
+
 def complete_loss_table(outputs, network_outputs, critic_net):
     # Insert the "Decision Model" entry first
     outputs = {'Decision Model': (None, network_outputs[0], None, None, None), **outputs}
     rows = []
+    results = {}  # to store means/stds/markers for bolding
+    
+    # Denormalize Decision Model rewards
+    decision_data = critic_net.denormalize_reward(outputs['Decision Model'][1])
+    decision_data = decision_data[:, [2, 0, 1]].detach().cpu()  # move to CPU and reorder
+    
+    # Precompute Decision Model mean/std
+    decision_mean = decision_data.mean(dim=0)
+    decision_std = decision_data.std(dim=0)
     
     for key, val in outputs.items():
         data = critic_net.denormalize_reward(val[1])
+        data = data[:, [2, 0, 1]].detach().cpu()  # move to CPU
         mean = data.mean(dim=0)
         std = data.std(dim=0)
-
-        # reorder: [2, 0, 1]
-        order = [2, 0, 1]
-        mean = mean[order]
-        std = std[order]
-
-        # format as "$mean ± std$"
-        formatted = [f"${m:.2f} \\pm {s:.2f}$" for m, s in zip(mean, std)]
+        
+        # Compute significance vs Decision Model
+        if key != "Decision Model":
+            markers = []
+            for i in range(data.shape[1]):
+                t_stat, p_val = ttest_rel(
+                    data[:, i].numpy(),
+                    decision_data[:, i].numpy()
+                )
+                markers.append("^{\\dagger}" if p_val < 0.05 else "")
+        else:
+            markers = [""] * data.shape[1]
+        
+        results[key] = (mean, std, markers)
+    
+    # --- Determine which are lowest (for bolding) ---
+    means_stack = torch.stack([v[0] for v in results.values()])  # now all on CPU
+    rounded_means = means_stack.round(decimals=2)
+    min_per_col = rounded_means.min(dim=0).values
+    
+    # --- Build table rows ---
+    for key, (mean, std, markers) in results.items():
+        formatted = []
+        for i in range(len(mean)):
+            m, s, mark = mean[i].item(), std[i].item(), markers[i]
+            # Bold mean only if equals min (within shown precision)
+            if round(m, 2) == round(min_per_col[i].item(), 2):
+                formatted.append(f"$\\mathbf{{{m:.2f}}} \\pm {s:.2f}{mark}$")
+            else:
+                formatted.append(f"${m:.2f} \\pm {s:.2f}{mark}$")
         rows.append(f"{key} & " + " & ".join(formatted) + r" \\")
     
-    # header, body, footer
+    # --- Table formatting ---
     header = (
         r"\begin{tabular}{lccc}" "\n"
         r"\toprule" "\n"
@@ -638,10 +671,11 @@ def complete_loss_table(outputs, network_outputs, critic_net):
 
     body = "\n".join(rows)
     footer = r"\bottomrule" "\n" r"\end{tabular}"
-
     table = "\n".join([header, body, footer])
-
+    
     print(table)
+
+
 
 
 def plot_evaluation_accuracy(outputs, network_outputs):
@@ -711,7 +745,7 @@ def plot_comparison_scatter(outputs, network_outputs=None):
     plt.xlim(time_min - time_padding, time_max + time_padding*2)
     plt.ylim(mse_min - mse_padding, mse_max + mse_padding*1.9)
 
-    plt.xlabel("Mean Evaluation Time [s]", fontsize=fontsize)
+    plt.xlabel("Mean evaluation time [s]", fontsize=fontsize)
     plt.gcf().text(0.223, 0.045, r"$\leftarrow$ Lower is better", ha='center', c="dimgray", fontsize=fontsize)
     plt.ylabel(r"Mean $\mathcal{L}_l$", fontsize=fontsize)
     plt.gcf().text(0.02, 0.28, r"$\leftarrow$ Lower is better", va='center', rotation=90, c="dimgray", fontsize=fontsize)
