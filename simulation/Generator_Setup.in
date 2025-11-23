@@ -1,0 +1,36 @@
+! Created by the authors of:
+! Status Report of the Berlin Energy Recovery Linac Project BERLinPro, M. Abo-Bakr, DOI: 10.18429/JACoW-IPAC2016-TUPOW034
+! SRF Gun Development for Energy Recovery Linac Applications, T. Kamps, DOI: 10.1364/EUVXRAY.2016.ET1A.3
+! Setup and Status of an SRF Photoinjector for Energy-Recovery Linac Applications, T. Kamps, DOI: 10.18429/JACoW-IPAC2017-MOPVA010
+! Development of a compact test facility for SRF Photoelectron injectors, J. Völker DOI: 10.18452/19322
+
+&INPUT
+  LPROMPT=.F
+  FNAME = '__Dist__'
+  IPart=10000
+  Species='electrons'
+  Probe=.True.
+  Noise_reduc=.T
+  Cathode=.T
+  
+  Q_total=__QBunch__
+  
+  Ref_zpos=0.0
+  Ref_clock=0.0E0
+  Ref_Ekin=0.0                              !MTE ist transversale Energie; steckt schon in LE 10.12.2015; Quelle für MTE=64meV(@532nm) siehe Paper Vecchione IPAC 2012 OPPP041 Mail Martin vom 21.10.2015; und Eintrag/Berechnung Laborbuch
+  
+  Dist_z='g'  
+  sig_clock=__pulselength__                       ! 5ps Bunch length at cathode
+  !sig_clock=0.020                              
+  C_sig_clock=2.5                             
+  
+  Dist_pz='i', LE=0.241E-3                    
+  !LE=0.55E-3 
+  
+  Dist_x='r',  sig_x=__spotsize__
+  Dist_px='g',
+  
+  Dist_y='r' , sig_y=__spotsize__
+  Dist_py='g'
+ 
+ //

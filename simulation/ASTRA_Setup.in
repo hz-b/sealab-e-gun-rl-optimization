@@ -1,0 +1,84 @@
+! Created by the authors of:
+! Status Report of the Berlin Energy Recovery Linac Project BERLinPro, M. Abo-Bakr, DOI: 10.18429/JACoW-IPAC2016-TUPOW034
+! SRF Gun Development for Energy Recovery Linac Applications, T. Kamps, DOI: 10.1364/EUVXRAY.2016.ET1A.3
+! Setup and Status of an SRF Photoinjector for Energy-Recovery Linac Applications, T. Kamps, DOI: 10.18429/JACoW-IPAC2017-MOPVA010
+! Development of a compact test facility for SRF Photoelectron injectors, J. Völker DOI: 10.18452/19322
+
+&NEWRUN
+  Version=1
+  Head='gun_booster'
+  RUN=001,          
+  Distribution = '__Dist__', Xoff=__SpotXPos__, Yoff=__SpotYPos__, Zoff=__SpotZPos__             ! Electron start distribution; no transverse offset
+  EmitS=.F                                                                        
+  PhaseS=.T                                                                        
+  RefS=.F                                                                         
+  TcheckS=.F  
+  Lprompt=.F
+  !Qbunch=__QBunch__
+  Max_step=15000
+  AUTO_PHASE=.T
+  check_ref_part=.F
+  Z_min=__SpotZPos__,
+	Z_Cathode=__SpotZPos__
+  ZSTART=__Start__, ZSTOP=__Stop__                                                       
+  Zemit=100
+  Zphase=1
+  H_max=0.001                                                                      
+  H_min=0.0001
+ /
+
+ &OUTPUT
+ HIGH_RES=.T                                                                      
+ /
+ 
+
+ &CHARGE                               ! ACHTUNG ich habe auf 2D space Charge reduziert
+  LSPCH=.T                             ! Space charge fields are taken into account
+  Nrad = 30                            ! Cylindrical grid algorithm; Werte von Lazaraza
+  Nlong_in = 40
+  
+  LSPCH3D=F                            ! 3D Space charge fields calculated with FFT algorithm
+ !Nzf = 32                             ! Number of grid cells in z direction (nur bei 3D)
+ !Nz0 = 9                              ! Number of empty grid cells in z direction (nur bei 3D)
+ !Smooth_z = 1                         ! Smoothing parameter (nur bei 3D) 
+ !Nxf = 32
+ !Nx0 = 9
+ !Smooth_x = 1
+ !Nyf = 32
+ !Ny0 = 9
+ !Smooth_y = 1
+
+  Cell_var=1.0                         ! no cell hight variation
+  min_grid=0.4E-6                      ! min grid length
+  Max_scale=0.05
+  Max_count=50
+  Lmirror=.t                           ! Mirror charges at the cathode are taken into account
+
+  L2D_3D=f                             ! Transition from 2D to 3D space charge calculations at z_trans
+ !z_trans=4.7                          ! anscheinend erst hinter Booster 3D Space charge
+ !min_grid_trans=0.4e-6
+ /
+
+
+
+ &CAVITY
+  LEFieLD=.t 
+  FILE_EFieLD(1)='__CavFields__/RF_GunCavity_z__Gun_Field__.dat', C_smooth(1)=5, C_higher_order(1)=.T, Nue(1)=1.3, MaxE(1)=__Gun_Epeak__, Phi(1)=__Gun_Phase__, C_pos(1)=0.017, Flatness(1)=__FF__                             
+  FILE_EFieLD(2)='__CavFields__/DC-1D_GunCavity_z__Gun_Field__.dat', C_smooth(2)=5, C_higher_order(2)=.T, Nue(2)=0, Phi(2)=90, C_pos(2)=0.017, C_noscale(2)=.T,              
+      
+ / 
+
+ &SOLENOID
+  LBFieLD=.T,
+  FILE_BFieLD(1)='__CavFields__/SolenoidHZB_2_0_standard_normalized.txt', MaxB(1)=__BSol__, S_HIGHER_ORDER(1)= .T, S_smooth(1)=5, S_pos(1)=__zSol__,
+  S_xoff=__SolXPos__,S_yoff=__SolYPos__,S_xrot=__rotX__,S_yrot=__rotY__
+
+ /
+ &MODULES
+    LModule=T
+    Module(1,1)='cavity(2)'
+    Mod_Efield(1)=__Gun_Bias__,
+
+ /
+/
+
