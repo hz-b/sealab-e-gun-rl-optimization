@@ -23,15 +23,15 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
-     inkscape:zoom="2.8284271"
-     inkscape:cx="102.17693"
-     inkscape:cy="246.07316"
-     inkscape:window-width="3840"
-     inkscape:window-height="2091"
+     inkscape:zoom="1.0402894"
+     inkscape:cx="180.71894"
+     inkscape:cy="123.04268"
+     inkscape:window-width="1536"
+     inkscape:window-height="795"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
-     inkscape:current-layer="svg1"
+     inkscape:current-layer="layer1"
      inkscape:connector-spacing="0" />
   <defs
      id="defs1">
@@ -3962,6 +3962,13 @@
      inkscape:groupmode="layer"
      id="layer1"
      transform="translate(-31.4278, 24.6475)">
+    <rect
+       style="fill:#ffffff;stroke-width:0.964887"
+       id="rect2"
+       width="125"
+       height="130"
+       x="31.427799"
+       y="-24.647499" />
     <g
        inkscape:label=""
        transform="translate(51.293143,-4.2470186)"
@@ -4911,33 +4918,34 @@
         </g>
       </g>
     </g>
-    <rect
-       style="fill:#1a1a1a;fill-opacity:1;stroke:none;stroke-width:0.264063;stroke-opacity:1"
-       id="rect13"
-       width="30"
-       height="18.333237"
-       x="88.458099"
-       y="10.618661"
-       rx="1.8966768"
-       ry="1.9041504" />
-    <text
-       xml:space="preserve"
-       style="font-size:4.23333px;white-space:pre;inline-size:36.5654;display:inline;fill:#000000;stroke-width:0.264583"
-       x="97.393196"
-       y="18.494572"
-       id="text1-2"
-       transform="translate(-12.175351,-0.2544579)"><tspan
-         x="97.393196"
-         y="18.494572"
-         id="tspan4"><tspan
-           style="text-align:center;text-anchor:middle;fill:#ffffff"
-           id="tspan3">Offset
-</tspan></tspan><tspan
-         x="97.393196"
-         y="23.786235"
-         id="tspan6"><tspan
-           style="text-align:center;text-anchor:middle;fill:#ffffff"
-           id="tspan5">Finder</tspan></tspan></text>
+    <g
+       id="g4">
+      <rect
+         style="fill:#1a1a1a;fill-opacity:1;stroke:none;stroke-width:0.264063;stroke-opacity:1"
+         id="rect13"
+         width="30"
+         height="18.333237"
+         x="88.458099"
+         y="10.618661"
+         rx="1.8966768"
+         ry="1.9041504" />
+      <text
+         xml:space="preserve"
+         style="font-size:4.23333px;fill:#000000;stroke-width:0.264583"
+         x="103.28454"
+         y="18.737532"
+         id="text1-2-0-3"><tspan
+           sodipodi:role="line"
+           style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.264583"
+           x="103.28454"
+           y="18.737532"
+           id="tspan17-6">Offset</tspan><tspan
+           sodipodi:role="line"
+           style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.264583"
+           x="103.28454"
+           y="24.029194"
+           id="tspan3">Finder</tspan></text>
+    </g>
     <text
        xml:space="preserve"
        style="font-size:3.88056px;white-space:pre;inline-size:32.6925;display:inline;fill:#1a1a1a;fill-opacity:1;stroke:none;stroke-width:0.264583;stroke-opacity:1"
@@ -4947,10 +4955,10 @@
        transform="translate(-23.10347,-43.974067)"><tspan
          x="143.82521"
          y="31.110653"
-         id="tspan7">Beamline </tspan><tspan
+         id="tspan4">Beamline </tspan><tspan
          x="143.82521"
          y="35.961352"
-         id="tspan9">configurations</tspan></text>
+         id="tspan5">configurations</tspan></text>
     <rect
        style="fill:#1a1a1a;fill-opacity:1;stroke:none;stroke-width:0.264063;stroke-opacity:1"
        id="rect13-4"
@@ -5154,11 +5162,11 @@
        transform="translate(-23.126755,-12.937045)"><tspan
          x="143.82521"
          y="31.110653"
-         id="tspan10">Offset to minimize
+         id="tspan6">Offset to minimize
 </tspan><tspan
          x="143.82521"
          y="35.961352"
-         id="tspan11">               error</tspan></text>
+         id="tspan7">               error</tspan></text>
     <path
        style="fill:none;stroke:#000000;stroke-width:0.242;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#marker1)"
        d="m 118.38015,19.786497 h 15.60869 V 44.6347 h -13.77492"
@@ -5183,7 +5191,7 @@
        transform="translate(47.135432,9.6349513)"><tspan
          x="17.937019"
          y="32.645229"
-         id="tspan12">Histograms</tspan></text>
+         id="tspan9">Histograms</tspan></text>
     <path
        style="fill:none;stroke:#000000;stroke-width:0.242;stroke-dasharray:1.936, 0.484, 0.242, 0.484;stroke-dashoffset:0;stroke-opacity:1"
        d="M 88.666531,-5.915503 H 48.637836 v 25.702 h 38.362782"
@@ -5198,11 +5206,11 @@
        transform="translate(-83.786329,-43.964364)"><tspan
          x="143.82521"
          y="31.110653"
-         id="tspan14">Histograms of
+         id="tspan10">Histograms of
 </tspan><tspan
          x="143.82521"
          y="35.961352"
-         id="tspan15">recordings</tspan></text>
+         id="tspan11">recordings</tspan></text>
     <text
        xml:space="preserve"
        style="font-size:3.88056px;white-space:pre;inline-size:33.3211;display:inline;fill:#1a1a1a;fill-opacity:1;stroke:none;stroke-width:0.264583;stroke-opacity:1"
@@ -5212,7 +5220,7 @@
        transform="translate(35.323009,-14.570577)"><tspan
          x="17.937019"
          y="32.645229"
-         id="tspan18">Calculate error</tspan></text>
+         id="tspan12">Calculate error</tspan></text>
     <path
        style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.242;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle)"
        d="m 103.50182,65.139322 -0.0176,-10.516163"
@@ -5253,7 +5261,7 @@
          transform="translate(73.995823,67.260947)"><tspan
            x="17.937019"
            y="32.645229"
-           id="tspan19">Initially set</tspan></text>
+           id="tspan14">Initially set</tspan></text>
       <text
          xml:space="preserve"
          style="font-size:3.88056px;white-space:pre;inline-size:33.3211;display:inline;fill:#1a1a1a;fill-opacity:1;stroke:none;stroke-width:0.264583;stroke-opacity:1"
@@ -5263,7 +5271,7 @@
          transform="translate(73.995823,72.731278)"><tspan
            x="17.937019"
            y="32.645229"
-           id="tspan20">Iteratively applied</tspan></text>
+           id="tspan15">Iteratively applied</tspan></text>
     </g>
     <g
        inkscape:label=""
