@@ -199,7 +199,7 @@ if __name__ == "__main__":
          }
     
     model_dict = model_paths_to_model_dict(model_paths, prefix="outputs/berlinpro_decision_model")
-    result_dict = evaluate_model_dict_to_result_dict(model_dict)
+    result_dict = evaluate_model_dict_to_result_dict(model_dict, num_samples=100000)
     
     with open("outputs/result_dict.pkl", "wb") as f:
         pickle.dump(result_dict, f)
