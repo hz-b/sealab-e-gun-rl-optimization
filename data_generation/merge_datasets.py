@@ -6,8 +6,22 @@ import os
 from tqdm import tqdm
 
 # Use glob to find all matching files
-file_pattern = '../datasets/raw/bbp_ds_10m_*.h5'
+file_pattern = 'data/bbp_ds_10m_*.h5'
 files = glob.glob(file_pattern)
+
+print(len(files))
+
+unpresent_files = []
+
+for i in range(1, 2001):
+    filename = f"data/bbp_ds_10m_{i}.h5"
+    if filename not in files:
+        unpresent_files.append(filename)
+
+# Print result
+print("Missing files:")
+for f in unpresent_files:
+    print(f)
 
 # Sort files numerically based on the number in the filename
 def extract_number(filename):
@@ -29,7 +43,7 @@ X_merged = np.concatenate(X_list, axis=0)
 Y_merged = np.concatenate(Y_list, axis=0)
 
 # Write merged data
-output_file = '../datasets/bbp_ds_10m_merged.h5'
+output_file = '../datasets/bbp_ds_2m_merged_v2.h5'
 with h5py.File(output_file, 'w') as f_out:
     f_out.create_dataset('X', data=X_merged, compression='gzip')
     f_out.create_dataset('Y', data=Y_merged, compression='gzip')
