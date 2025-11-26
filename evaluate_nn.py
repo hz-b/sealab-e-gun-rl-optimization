@@ -4,7 +4,7 @@ import errno
 import glob
 import torch
 from tqdm.auto import tqdm
-from scipy.stats import ttest_ind
+from scipy.stats import ttest_rel
 import re
 from critic import Critic
 from model import RandomDataModule, RandomModel
@@ -51,7 +51,7 @@ def evaluate_model_dict_to_result_dict(model_dict):
 
 @staticmethod
 def significant_confidence_levels(group_A, group_B, confidence=0.99):
-    ci = ttest_ind(group_A.flatten().cpu(), group_B.flatten().cpu(), equal_var=False).confidence_interval(confidence_level=confidence)
+    ci = ttest_rel(group_A.flatten().cpu(), group_B.flatten().cpu()).confidence_interval(confidence_level=confidence)
     confidence_interval = (ci.low.item(), ci.high.item())
     return not (confidence_interval[0] < 0. and confidence_interval[1] > 0.), confidence_interval
 
@@ -102,7 +102,7 @@ def evaluate(seed_shift, model, critic_net, num_samples=100000):
 def evaluate_model_dict_to_result_dict(model_dict, num_samples=100):
     result_dict = {}
     for i, (key, model) in tqdm(enumerate(model_dict.items()), total=len(model_dict)):
-        result_dict[key] = evaluate(i, model, critic_net, num_samples)
+        result_dict[key] = evaluate(0, model, critic_net, num_samples)
     return result_dict
 
 def scientific(value: float, precision: int = 3) -> str:
